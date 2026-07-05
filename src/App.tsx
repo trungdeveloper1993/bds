@@ -24,12 +24,7 @@ export default function App() {
   const [mapFocus, setMapFocus] = useState<MapFocus | null>(null);
 
   // Single source of truth for synchronized points (Coordinate mode)
-  const [points, setPoints] = useState<SyncedPoint[]>([
-    { id: '1', label: 'Mốc 1', x: 2321542.15, y: 598314.56, lat: 21.028500, lng: 105.854200 },
-    { id: '2', label: 'Mốc 2', x: 2321562.15, y: 598314.56, lat: 21.028680, lng: 105.854200 },
-    { id: '3', label: 'Mốc 3', x: 2321562.15, y: 598329.56, lat: 21.028680, lng: 105.854344 },
-    { id: '4', label: 'Mốc 4', x: 2321542.15, y: 598329.56, lat: 21.028500, lng: 105.854344 }
-  ]);
+  const [points, setPoints] = useState<SyncedPoint[]>([]);
 
   // Province & Central Meridian for VN-2000 coordinate conversion
   const [selectedProvince, setSelectedProvince] = useState<string>('Hà Nội');
@@ -62,12 +57,7 @@ export default function App() {
   };
 
   // Source of truth for side length inputs
-  const [sideInputs, setSideInputs] = useState<SideInput[]>([
-    { id: 's1', fromNode: '1', toNode: '2', length: 15.0 },
-    { id: 's2', fromNode: '2', toNode: '3', length: 6.0 },
-    { id: 's3', fromNode: '3', toNode: '4', length: 14.8 },
-    { id: 's4', fromNode: '4', toNode: '1', length: 6.2 },
-  ]);
+  const [sideInputs, setSideInputs] = useState<SideInput[]>([]);
 
   const handleFocusPoint = (lat: number, lng: number) => {
     if (inputMode === 'sideLength') return; // disabled in side length mode
