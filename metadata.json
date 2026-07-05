@@ -1,0 +1,6 @@
+{
+  "name": "Bản Đồ Số Hóa & Tính Diện Tích Đất",
+  "description": "Ứng dụng chuyên nghiệp hỗ trợ mua bán BĐS: nhập tọa độ (GPS/VN-2000) vẽ thửa đất, tự động tính diện tích, đơn giá/m2, và hiển thị trực quan trên bản đồ số hóa vệ tinh.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
