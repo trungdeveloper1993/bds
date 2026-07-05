@@ -13,6 +13,7 @@ import { SyncedPoint } from '../types';
 import { convertVN2000ToGPS, PROVINCES_CM, autoDetectProvince } from '../utils';
 import { Plus, Trash2, LayoutGrid, ChevronDown, Sparkles, Camera, Upload, Loader2, Image as ImageIcon, AlertCircle, Compass, Eye } from 'lucide-react';
 import Tesseract from 'tesseract.js';
+import { ocrCoordinatesWithGemini, OcrPoint } from '../geminiOcr';
 
 // --- ROBUST OFFLINE COORDINATE PARSING UTILITIES ---
 function parseSmartCoordinate(token: string): number | null {
@@ -330,38 +331,49 @@ export default function VNTable({ points, onChangePoints, onClear, onFocusPoint,
 
           setOcrStatus("Gemini AI đang đọc bảng tọa độ sổ đỏ...");
 
-          const response = await fetch("/api/ocr-coordinates", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-gemini-key": customApiKey || ""
-            },
-            body: JSON.stringify({
-              imageBase64: base64Data,
-              mimeType: mimeType
-            })
-          });
+          let points: OcrPoint[];
+          if (customApiKey && customApiKey.trim() !== "") {
+            // Có API key của người dùng -> gọi Gemini trực tiếp từ trình duyệt.
+            // Nhờ vậy tính năng vẫn chạy khi triển khai tĩnh (GitHub Pages),
+            // không cần backend Express.
+            points = await ocrCoordinatesWithGemini(customApiKey, base64Data, mimeType);
+          } else {
+            // Không có key -> dùng backend (chỉ khả dụng khi có server chạy).
+            const response = await fetch("/api/ocr-coordinates", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-gemini-key": ""
+              },
+              body: JSON.stringify({
+                imageBase64: base64Data,
+                mimeType: mimeType
+              })
+            });
 
-          if (!response.ok) {
-            const errData = await response.json();
-            throw new Error(errData.error || "Gửi yêu cầu phân tích thất bại.");
+            if (!response.ok) {
+              const errData = await response.json().catch(() => ({}));
+              throw new Error(errData.error || "Chưa cấu hình API Key. Vui lòng nhập API Key Gemini của bạn để sử dụng tính năng này!");
+            }
+
+            const data = await response.json();
+            points = data.points;
           }
 
           setOcrStatus("Đang đồng bộ mốc ranh địa chính VN-2000...");
-          const data = await response.json();
 
-          if (!data.points || data.points.length === 0) {
+          if (!points || points.length === 0) {
             throw new Error("Không tìm thấy bảng tọa độ VN-2000 hợp lệ trong ảnh. Hãy chắc chắn ảnh chụp rõ nét bảng tọa độ.");
           }
 
-          const detected = autoDetectProvince(data.points);
+          const detected = autoDetectProvince(points);
           let meridianToUse = centralMeridian;
           if (detected) {
             meridianToUse = detected.meridian;
             onProvinceChange(detected.name, detected.meridian);
           }
 
-          const syncedPoints: SyncedPoint[] = data.points.map((p: any, idx: number) => {
+          const syncedPoints: SyncedPoint[] = points.map((p: any, idx: number) => {
             const gps = convertVN2000ToGPS(p.x, p.y, meridianToUse);
             return {
               id: `ocr-${idx}-${Date.now()}`,
