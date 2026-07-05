@@ -276,7 +276,7 @@ export default function VNTable({ points, onChangePoints, onClear, onFocusPoint,
           const parsed = parseCoordinatesFromText(text);
 
           if (parsed.length === 0) {
-            throw new Error("Không tìm thấy hàng tọa độ VN-2000 nào khớp ở chế độ Quét Offline. Bạn có thể tự điền tay hoặc bấm đổi sang chế độ 'Quét bằng Gemini AI' phía trên để trích xuất cực kỳ chuẩn xác!");
+            throw new Error("Không tìm thấy hàng tọa độ VN-2000 nào khớp ở chế độ Quét Offline. Bạn có thể tự điền tay hoặc bấm đổi sang chế độ 'Quét bằng Gemini' phía trên để trích xuất cực kỳ chuẩn xác!");
           }
 
           const detected = autoDetectProvince(parsed);
@@ -329,7 +329,7 @@ export default function VNTable({ points, onChangePoints, onClear, onFocusPoint,
           const base64Data = result.substring(commaIdx + 1);
           const mimeType = file.type;
 
-          setOcrStatus("Gemini AI đang đọc bảng tọa độ sổ đỏ...");
+          setOcrStatus("Gemini đang đọc bảng tọa độ sổ đỏ...");
 
           let points: OcrPoint[];
           if (customApiKey && customApiKey.trim() !== "") {
@@ -391,7 +391,7 @@ export default function VNTable({ points, onChangePoints, onClear, onFocusPoint,
           setShowOcrPanel(false);
         } catch (err: any) {
           console.error(err);
-          setOcrError(err?.message || "Có lỗi xảy ra trong quá trình quét ảnh bằng AI.");
+          setOcrError(err?.message || "Có lỗi xảy ra trong quá trình quét ảnh bằng Gemini.");
           setIsOcrLoading(false);
         }
       };
@@ -524,7 +524,7 @@ export default function VNTable({ points, onChangePoints, onClear, onFocusPoint,
             }`}
           >
             <Camera className="w-3.5 h-3.5" />
-            <span>Quét ảnh AI</span>
+            <span>Quét ảnh</span>
           </button>
 
           {/* Quick Sample Selector */}
@@ -597,7 +597,7 @@ export default function VNTable({ points, onChangePoints, onClear, onFocusPoint,
             <div>
               <h4 className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-indigo-500 fill-indigo-500/20" />
-                {ocrMode === 'tesseract' ? 'Quét Tọa Độ Ngoại Tuyến (Offline Tesseract)' : 'Quét Tọa Độ Bằng Gemini AI (Yêu Cầu Mạng)'}
+                {ocrMode === 'tesseract' ? 'Quét Tọa Độ Ngoại Tuyến (Offline Tesseract)' : 'Quét Tọa Độ Bằng Gemini (Yêu Cầu Mạng)'}
               </h4>
               <p className="text-[10px] text-indigo-600/80 mt-0.5">
                 {ocrMode === 'tesseract' 
@@ -638,7 +638,7 @@ export default function VNTable({ points, onChangePoints, onClear, onFocusPoint,
                   : 'text-slate-500 hover:text-slate-800 disabled:opacity-50'
               }`}
             >
-              Mạng AI (Gemini API)
+              Mạng (Gemini API)
             </button>
           </div>
 
