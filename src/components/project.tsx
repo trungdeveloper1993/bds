@@ -6,6 +6,7 @@ import {
   CircleMinus,
   CircleX,
   Clock,
+  Eye,
   Files,
   Images,
   House,
@@ -18,7 +19,7 @@ import {
   TriangleAlert,
   type LucideIcon,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   ACTIVE_PROPERTY_STATUSES,
   LEGAL_CHECKLIST,
@@ -28,7 +29,9 @@ import {
   PROJECT_STAGE,
   PROPERTY_TYPE_SHORT,
 } from '../constants';
+import { useFocusRequest } from '../lib/focus';
 import { uid } from '../lib/id';
+import { legalProgress, resolveChecklist } from '../lib/legal';
 import { formatPriceRange, formatProjectAddress } from '../lib/listing';
 import { navigate } from '../lib/router';
 import { useData } from '../store/data';
@@ -36,7 +39,7 @@ import { useUI } from '../store/ui';
 import type { FaqItem, LegalItem, LegalItemStatus, Project, Property, UnitTypeRow } from '../types';
 import { DocActions } from './documents';
 import { ImageView } from './media';
-import { Badge, Button, Card, CardHeader, cn, EmptyState, Field, IconButton, Modal, Select, TextArea, TextInput } from './ui';
+import { Badge, Button, Card, CardHeader, cn, EmptyState, Field, IconButton, Modal, Select, TextArea, TextInput, Toggle } from './ui';
 
 export function ProjectStageBadge({ project, size = 'md' }: { project: Pick<Project, 'stage'>; size?: 'sm' | 'md' }) {
   const s = PROJECT_STAGE[project.stage];
@@ -112,33 +115,7 @@ const STATUS_ICON: Record<LegalItemStatus, { icon: LucideIcon; className: string
   chua_ro: { icon: CircleDashed, className: 'text-slate-300' },
 };
 
-/** Hạng mục chuẩn (luôn đủ 12 mục) + hạng mục tự thêm. */
-export function resolveChecklist(project: Project): Array<LegalItem & { hint?: string; scope?: 'all' | 'ch' | 'dn' }> {
-  const stored = new Map(project.legalChecklist.map((i) => [i.key, i]));
-  const standard = LEGAL_CHECKLIST.map((def) => {
-    const s = stored.get(def.key);
-    return {
-      key: def.key,
-      label: def.label,
-      status: s?.status ?? ('chua_ro' as const),
-      note: s?.note ?? '',
-      docId: s?.docId,
-      hint: def.hint,
-      scope: def.scope,
-    };
-  });
-  const custom = project.legalChecklist.filter((i) => i.custom);
-  return [...standard, ...custom];
-}
-
-export function legalProgress(project: Project): { done: number; total: number; checked: number } {
-  const items = resolveChecklist(project).filter((i) => i.status !== 'khong_ap_dung');
-  return {
-    done: items.filter((i) => i.status === 'co').length,
-    total: items.length,
-    checked: items.filter((i) => i.status !== 'chua_ro').length,
-  };
-}
+export { legalProgress, resolveChecklist } from '../lib/legal';
 
 export function LegalChecklist({ project, editable }: { project: Project; editable: boolean }) {
   const { patchProject } = useData();
@@ -165,7 +142,7 @@ export function LegalChecklist({ project, editable }: { project: Project; editab
   };
 
   return (
-    <Card>
+    <Card id="legal-checklist">
       <CardHeader
         title="Checklist hồ sơ pháp lý"
         icon={Scale}
@@ -194,7 +171,7 @@ export function LegalChecklist({ project, editable }: { project: Project; editab
           const st = STATUS_ICON[item.status];
           const doc = item.docId ? project.documents.find((d) => d.id === item.docId) : undefined;
           return (
-            <li key={item.key} className="flex items-start gap-3 px-4 py-3 sm:px-5">
+            <li key={item.key} id={`legal-${item.key}`} className="flex items-start gap-3 px-4 py-3 sm:px-5">
               <st.icon size={20} className={cn('mt-0.5 shrink-0', st.className)} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -330,8 +307,12 @@ function LegalItemModal({
 /** Các ngưỡng pháp lý hay dùng khi tư vấn — kèm ngày cập nhật và cảnh báo sửa luật. */
 export function LegalReferenceCard() {
   const [open, setOpen] = useState(false);
+  useFocusRequest(
+    (a) => a === 'legal-reference',
+    () => setOpen(true),
+  );
   return (
-    <Card>
+    <Card id="legal-reference">
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left sm:px-5">
         <span className="flex items-center gap-2.5">
           <span className="flex size-8 items-center justify-center rounded-lg bg-sky-50 text-sky-700">
@@ -383,7 +364,7 @@ export function UnitTypesTable({ rows }: { rows: UnitTypeRow[] }) {
         </thead>
         <tbody className="divide-y divide-slate-100">
           {rows.map((r) => (
-            <tr key={r.id}>
+            <tr key={r.id} id={`ut-${r.id}`}>
               <td className="px-4 py-2.5 font-semibold text-slate-900 sm:px-5">{r.name}</td>
               <td className="px-3 py-2.5 text-slate-700">{r.area}</td>
               <td className="px-3 py-2.5 font-semibold text-brand-800">{r.price}</td>
@@ -431,11 +412,11 @@ export function UnitTypesEditor({ rows, onChange }: { rows: UnitTypeRow[]; onCha
 
 // ---------------------------------------------------------------- Hỏi đáp tư vấn
 
-export function FaqList({ project, editable }: { project: Project; editable: boolean }) {
+/** Mở hộp thoại thêm / sửa câu hỏi Q&A từ bất kỳ đâu (danh sách Q&A, ô Hỏi nhanh). */
+export function useFaqEditor(project: Project): { open: (draft?: Partial<FaqItem>) => void; edit: (item: FaqItem) => void; modal: ReactNode } {
   const { patchProject } = useData();
   const { toast, confirm } = useUI();
   const [editing, setEditing] = useState<FaqItem | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
 
   const save = async (item: FaqItem) => {
     await patchProject(project.id, (cur) => {
@@ -453,15 +434,38 @@ export function FaqList({ project, editable }: { project: Project; editable: boo
     setEditing(null);
   };
 
+  return {
+    open: (draft) => setEditing({ id: uid(), question: '', answer: '', isPublic: false, ...draft }),
+    edit: setEditing,
+    modal: (
+      <FaqModal
+        item={editing}
+        isNew={!!editing && !project.faqs.some((f) => f.id === editing.id)}
+        onClose={() => setEditing(null)}
+        onSave={(f) => void save(f)}
+        onDelete={(f) => void remove(f)}
+      />
+    ),
+  };
+}
+
+export function FaqList({ project, editable }: { project: Project; editable: boolean }) {
+  const editor = useFaqEditor(project);
+  const [openId, setOpenId] = useState<string | null>(null);
+  useFocusRequest(
+    (a) => a.startsWith('faq-'),
+    (a) => setOpenId(a.slice(4)),
+  );
+
   return (
     <Card>
       <CardHeader
         title={`Hỏi đáp tư vấn (${project.faqs.length})`}
         icon={MessageCircleQuestion}
-        description="Câu hỏi khách hay hỏi & cách trả lời"
+        description="Câu hỏi khách hay hỏi & cách trả lời — ô Hỏi nhanh sẽ tìm trong đây trước"
         actions={
           editable && (
-            <Button size="sm" icon={Plus} onClick={() => setEditing({ id: uid(), question: '', answer: '' })}>
+            <Button size="sm" icon={Plus} onClick={() => editor.open()}>
               Thêm câu hỏi
             </Button>
           )
@@ -479,13 +483,25 @@ export function FaqList({ project, editable }: { project: Project; editable: boo
           {project.faqs.map((f) => {
             const open = openId === f.id;
             return (
-              <li key={f.id}>
+              <li key={f.id} id={`faq-${f.id}`}>
                 <div className="flex items-start gap-2 px-4 py-3 sm:px-5">
-                  <button type="button" onClick={() => setOpenId(open ? null : f.id)} className="flex min-w-0 flex-1 items-start gap-2 text-left">
+                  <button type="button" onClick={() => setOpenId(open ? null : f.id)} className="flex min-w-0 flex-1 items-start gap-2 text-left" aria-expanded={open}>
                     <ChevronDown size={17} className={cn('mt-0.5 shrink-0 text-slate-400 transition', open && 'rotate-180')} />
-                    <span className="text-sm font-semibold text-slate-900">{f.question}</span>
+                    <span className="min-w-0">
+                      <span className="text-sm font-semibold text-slate-900">{f.question}</span>
+                      {f.isPublic && (
+                        <Badge size="sm" tone="emerald" icon={Eye} className="ml-2 align-middle">
+                          Khách xem được
+                        </Badge>
+                      )}
+                      {!f.answer.trim() && (
+                        <Badge size="sm" tone="amber" className="ml-2 align-middle">
+                          Chưa có câu trả lời
+                        </Badge>
+                      )}
+                    </span>
                   </button>
-                  {editable && <IconButton icon={Pencil} label="Sửa" size="sm" onClick={() => setEditing(f)} />}
+                  {editable && <IconButton icon={Pencil} label="Sửa" size="sm" onClick={() => editor.edit(f)} />}
                 </div>
                 {open && <p className="whitespace-pre-line px-4 pb-4 pl-11 text-sm leading-relaxed text-slate-600 sm:px-5 sm:pl-12">{f.answer || '—'}</p>}
               </li>
@@ -493,7 +509,42 @@ export function FaqList({ project, editable }: { project: Project; editable: boo
           })}
         </ul>
       )}
-      <FaqModal item={editing} isNew={!!editing && !project.faqs.some((f) => f.id === editing.id)} onClose={() => setEditing(null)} onSave={(f) => void save(f)} onDelete={(f) => void remove(f)} />
+      {editor.modal}
+    </Card>
+  );
+}
+
+/** Q&A đã cho khách xem — hiện ở trang Tổng quan khi bật Chế độ khách xem. */
+export function PublicFaqCard({ project }: { project: Project }) {
+  const faqs = project.faqs.filter((f) => f.isPublic && f.question.trim() && f.answer.trim());
+  const [openId, setOpenId] = useState<string | null>(null);
+  useFocusRequest(
+    (a) => a.startsWith('faq-'),
+    (a) => setOpenId(a.slice(4)),
+  );
+  if (!faqs.length) return null;
+  return (
+    <Card>
+      <CardHeader title="Câu hỏi thường gặp" icon={MessageCircleQuestion} />
+      <ul className="divide-y divide-slate-100">
+        {faqs.map((f) => {
+          const open = openId === f.id;
+          return (
+            <li key={f.id} id={`faq-${f.id}`}>
+              <button
+                type="button"
+                onClick={() => setOpenId(open ? null : f.id)}
+                className="flex w-full items-start gap-2 px-4 py-3 text-left sm:px-5"
+                aria-expanded={open}
+              >
+                <ChevronDown size={17} className={cn('mt-0.5 shrink-0 text-slate-400 transition', open && 'rotate-180')} />
+                <span className="text-sm font-semibold text-slate-900">{f.question}</span>
+              </button>
+              {open && <p className="whitespace-pre-line px-4 pb-4 pl-11 text-sm leading-relaxed text-slate-600 sm:px-5 sm:pl-12">{f.answer}</p>}
+            </li>
+          );
+        })}
+      </ul>
     </Card>
   );
 }
@@ -533,7 +584,7 @@ function FaqModal({
           <Button variant="ghost" onClick={onClose}>
             Huỷ
           </Button>
-          <Button variant="primary" onClick={() => onSave({ ...draft, question: draft.question.trim() })} disabled={!draft.question.trim()}>
+          <Button variant="primary" onClick={() => onSave({ ...draft, question: draft.question.trim(), answer: draft.answer.trim() })} disabled={!draft.question.trim()}>
             Lưu
           </Button>
         </>
@@ -543,9 +594,15 @@ function FaqModal({
         <Field label="Câu hỏi" required>
           <TextInput value={draft.question} onChange={(e) => setDraft({ ...draft, question: e.target.value })} placeholder="VD: Dự án đã có sổ chưa?" />
         </Field>
-        <Field label="Câu trả lời">
+        <Field label="Câu trả lời" hint={draft.answer.trim() ? undefined : 'Có thể để trống và bổ sung sau khi hỏi lại CĐT / F1.'}>
           <TextArea rows={6} value={draft.answer} onChange={(e) => setDraft({ ...draft, answer: e.target.value })} />
         </Field>
+        <Toggle
+          checked={draft.isPublic}
+          onChange={(v) => setDraft({ ...draft, isPublic: v })}
+          label="Cho khách xem câu trả lời này"
+          description="Hiện trong ô Hỏi nhanh và trang Tổng quan khi bật Chế độ khách xem. Để tắt với câu trả lời chỉ dùng nội bộ (xử lý từ chối, so sánh đối thủ…)."
+        />
       </div>
     </Modal>
   );

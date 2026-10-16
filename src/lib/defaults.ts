@@ -332,7 +332,12 @@ function normalizeFaq(raw: unknown): FaqItem | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Loose<FaqItem>;
   if (typeof r.question !== 'string') return null;
-  return { id: typeof r.id === 'string' && r.id ? r.id : uid(), question: r.question, answer: str(r.answer) };
+  return {
+    id: typeof r.id === 'string' && r.id ? r.id : uid(),
+    question: r.question,
+    answer: str(r.answer),
+    isPublic: r.isPublic === true,
+  };
 }
 
 const listOfObjects = <T>(v: unknown, fn: (x: unknown) => T | null): T[] =>

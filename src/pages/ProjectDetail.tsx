@@ -31,12 +31,13 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 import { DocActions, DocumentManager, FileTypeIcon } from '../components/documents';
 import { DropZone, Gallery, ImageManager, ImageView, Lightbox, useImageUpload } from '../components/media';
-import { FaqList, LegalChecklist, LegalReferenceCard, legalProgress, ProjectStageBadge, UnitTypesTable } from '../components/project';
+import { FaqList, LegalChecklist, LegalReferenceCard, legalProgress, ProjectStageBadge, PublicFaqCard, UnitTypesTable } from '../components/project';
 import { PropertyRow } from '../components/property';
 import { ShareTextModal } from '../components/share';
+import { ProjectSmartFind } from '../components/smartfind';
 import {
   Avatar,
   Badge,
@@ -50,25 +51,29 @@ import {
   ResponsiveLabel,
   Spec,
   TabBar,
+  TextLines,
 } from '../components/ui';
 import {
   ACTIVE_PROPERTY_STATUSES,
   CUSTOMER_STATUS,
+  PROJECT_STAGE,
   PROPERTY_STATUSES,
   PROPERTY_TYPE_LABEL,
   TEMPERATURE,
   propertyStatusLabel,
 } from '../constants';
+import { requestFocus } from '../lib/focus';
 import { formatDateTime, formatNumber, relativeDay } from '../lib/format';
 import { buildProjectText, formatPriceRange, formatProjectAddress } from '../lib/listing';
 import { navigate, useLocation } from '../lib/router';
+import { textLines, type ProjectTab } from '../lib/smartfind';
 import { needsSummary } from '../lib/summary';
 import { useData } from '../store/data';
 import { useUI } from '../store/ui';
 import type { Project } from '../types';
 import { NotFound } from './NotFound';
 
-type TabKey = 'tong-quan' | 'phap-ly' | 'tai-lieu' | 'hinh-anh' | 'gio-hang' | 'khach' | 'noi-bo';
+type TabKey = ProjectTab;
 
 export function ProjectDetail({ id }: { id: string }) {
   const { projectById, properties, customers, settings, deleteProject } = useData();
@@ -91,6 +96,11 @@ export function ProjectDetail({ id }: { id: string }) {
   const requested = (query.get('tab') as TabKey | null) ?? 'tong-quan';
   const tab: TabKey = privacy && (requested === 'khach' || requested === 'noi-bo') ? 'tong-quan' : requested;
   const setTab = (t: TabKey) => navigate(`/du-an/${id}${t === 'tong-quan' ? '' : `?tab=${t}`}`, { replace: true });
+  /** Từ ô Hỏi nhanh: mở đúng tab rồi cuộn tới đoạn trả lời. */
+  const jump = (target: TabKey, anchor: string) => {
+    if (target !== tab) setTab(target);
+    requestFocus(anchor, 'project-tabs');
+  };
 
   const editable = !privacy;
   const legal = legalProgress(p);
@@ -202,7 +212,11 @@ export function ProjectDetail({ id }: { id: string }) {
         <Spec icon={House} label="Giỏ hàng" value={`${activeUnits.length} căn đang bán`} />
       </div>
 
-      <TabBar value={tab} onChange={setTab} tabs={tabs} className="mb-5" />
+      <ProjectSmartFind key={p.id} project={p} units={units} privacy={privacy} editable={editable} initialQuery={query.get('hoi') ?? undefined} onJump={jump} />
+
+      <div id="project-tabs" className="scroll-mt-24">
+        <TabBar value={tab} onChange={setTab} tabs={tabs} className="mb-5" />
+      </div>
 
       {tab === 'tong-quan' && (
         <OverviewTab project={p} editable={editable} privacy={privacy} onAddImages={() => setTab('hinh-anh')} />
@@ -219,12 +233,12 @@ export function ProjectDetail({ id }: { id: string }) {
                 <CardHeader title="Tóm tắt pháp lý" icon={Scale} />
                 <div className="space-y-2 p-4 sm:p-5">
                   {p.ownership && (
-                    <p className="text-sm">
+                    <p id="pf-ownership" className="text-sm">
                       <span className="text-slate-500">Hình thức sở hữu: </span>
                       <b className="text-slate-800">{p.ownership}</b>
                     </p>
                   )}
-                  {p.legalStatus && <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">{p.legalStatus}</p>}
+                  {p.legalStatus && <TextLines text={p.legalStatus} idPrefix="pf-legalStatus" className="text-sm leading-relaxed text-slate-700" />}
                 </div>
               </Card>
             )}
@@ -277,7 +291,7 @@ export function ProjectDetail({ id }: { id: string }) {
               {[...units]
                 .sort((a, b) => Number(!ACTIVE_PROPERTY_STATUSES.includes(a.status)) - Number(!ACTIVE_PROPERTY_STATUSES.includes(b.status)) || b.updatedAt.localeCompare(a.updatedAt))
                 .map((u) => (
-                  <PropertyRow key={u.id} property={u} project={p} privacy={privacy} />
+                  <PropertyRow key={u.id} id={`unit-${u.id}`} property={u} project={p} privacy={privacy} />
                 ))}
             </div>
           )}
@@ -331,24 +345,17 @@ export function ProjectDetail({ id }: { id: string }) {
   );
 }
 
-function TextBlock({ title, icon, children, tone }: { title: string; icon: LucideIcon; children: ReactNode; tone?: 'internal' }) {
+function TextBlock({ title, icon, text, field, tone }: { title: string; icon: LucideIcon; text: string; field: string; tone?: 'internal' }) {
   return (
-    <Card className={tone === 'internal' ? 'border-amber-200/80' : ''}>
+    <Card id={`pf-${field}`} className={tone === 'internal' ? 'border-amber-200/80' : ''}>
       <CardHeader title={title} icon={icon} className={tone === 'internal' ? 'bg-amber-50/60' : ''} />
-      <div className="whitespace-pre-line p-4 text-sm leading-relaxed text-slate-700 sm:p-5">{children}</div>
+      <TextLines text={text} idPrefix={`pf-${field}`} className="p-4 text-sm leading-relaxed text-slate-700 sm:p-5" />
     </Card>
   );
 }
 
-function bulletLines(text: string): string[] {
-  return text
-    .split('\n')
-    .map((l) => l.trim().replace(/^[-•*+]\s*/, ''))
-    .filter(Boolean);
-}
-
 function OverviewTab({ project: p, editable, privacy, onAddImages }: { project: Project; editable: boolean; privacy: boolean; onAddImages: () => void }) {
-  const highlights = bulletLines(p.highlights);
+  const highlights = textLines(p.highlights);
   const hasFacts =
     p.legalName || p.devPartner || p.contractor || p.designer || p.operator || p.distributor || p.siteArea || p.density || p.scale || p.totalUnits || p.unitAreaRange;
   const empty = !p.description && !highlights.length && !hasFacts && !p.unitTypes.length && !p.paymentPlan && !p.banks && !p.salesPolicy;
@@ -394,15 +401,15 @@ function OverviewTab({ project: p, editable, privacy, onAddImages }: { project: 
           <Card>
             <CardHeader title="Giới thiệu dự án" icon={FileText} />
             <div className="space-y-4 p-4 sm:p-5">
-              {p.description && <p className="whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.description}</p>}
+              {p.description && <TextLines text={p.description} idPrefix="pf-description" className="text-[15px] leading-relaxed text-slate-700" />}
               {highlights.length > 0 && (
                 <div className="rounded-xl bg-brand-50/60 p-4">
                   <h3 className="mb-2 text-sm font-bold text-brand-900">Điểm nổi bật</h3>
                   <ul className="space-y-1.5">
                     {highlights.map((h) => (
-                      <li key={h} className="flex gap-2 text-sm text-slate-700">
+                      <li key={h.index} id={`pf-highlights-l${h.index}`} className="flex gap-2 text-sm text-slate-700">
                         <Sparkles size={15} className="mt-0.5 shrink-0 text-brand-600" />
-                        {h}
+                        {h.text}
                       </li>
                     ))}
                   </ul>
@@ -413,41 +420,46 @@ function OverviewTab({ project: p, editable, privacy, onAddImages }: { project: 
         )}
 
         {hasFacts && (
-          <Card>
+          <Card id="pf-info">
             <CardHeader title="Thông tin dự án" icon={Building2} />
             <dl className="grid grid-cols-1 gap-x-8 px-4 py-2 sm:grid-cols-2 sm:px-5 [&>div]:border-b [&>div]:border-slate-100">
               <InfoRow label="Tên thương mại">{p.name}</InfoRow>
-              <InfoRow label="Tên pháp lý / khác">{p.legalName}</InfoRow>
-              <InfoRow label="Chủ đầu tư">{p.developer}</InfoRow>
-              <InfoRow label="Đơn vị phát triển">{p.devPartner}</InfoRow>
-              <InfoRow label="Tổng thầu xây dựng">{p.contractor}</InfoRow>
-              <InfoRow label="Thiết kế">{p.designer}</InfoRow>
-              <InfoRow label="Quản lý vận hành">{p.operator}</InfoRow>
-              <InfoRow label="Đơn vị phân phối">{p.distributor}</InfoRow>
-              <InfoRow label="Tổng diện tích">{p.siteArea ? `${formatNumber(p.siteArea, 2)} ha` : undefined}</InfoRow>
-              <InfoRow label="Mật độ xây dựng">{p.density ? `${formatNumber(p.density, 1)}%` : undefined}</InfoRow>
-              <InfoRow label="Quy mô">{p.scale}</InfoRow>
-              <InfoRow label="Tổng số sản phẩm">{p.totalUnits ? p.totalUnits.toLocaleString('vi-VN') : undefined}</InfoRow>
-              <InfoRow label="Loại hình">{p.productTypes.map((t) => PROPERTY_TYPE_LABEL[t]).join(', ') || undefined}</InfoRow>
-              <InfoRow label="Diện tích sản phẩm">{p.unitAreaRange}</InfoRow>
-              <InfoRow label="Khởi công">{p.startDate}</InfoRow>
-              <InfoRow label="Bàn giao">{p.handover}</InfoRow>
-              <InfoRow label="Tiến độ hiện tại">{p.construction}</InfoRow>
-              <InfoRow label="Tiêu chuẩn bàn giao">{p.handoverStandard}</InfoRow>
-              <InfoRow label="Phí quản lý">{p.managementFee}</InfoRow>
-              <InfoRow label="Phí gửi xe">{p.parkingFee}</InfoRow>
+              <InfoRow id="pf-legalName" label="Tên pháp lý / khác">{p.legalName}</InfoRow>
+              <InfoRow id="pf-stage" label="Giai đoạn">{PROJECT_STAGE[p.stage].label}</InfoRow>
+              <InfoRow id="pf-developer" label="Chủ đầu tư">{p.developer}</InfoRow>
+              <InfoRow id="pf-devPartner" label="Đơn vị phát triển">{p.devPartner}</InfoRow>
+              <InfoRow id="pf-contractor" label="Tổng thầu xây dựng">{p.contractor}</InfoRow>
+              <InfoRow id="pf-designer" label="Thiết kế">{p.designer}</InfoRow>
+              <InfoRow id="pf-operator" label="Quản lý vận hành">{p.operator}</InfoRow>
+              <InfoRow id="pf-distributor" label="Đơn vị phân phối">{p.distributor}</InfoRow>
+              <InfoRow id="pf-siteArea" label="Tổng diện tích">{p.siteArea ? `${formatNumber(p.siteArea, 2)} ha` : undefined}</InfoRow>
+              <InfoRow id="pf-density" label="Mật độ xây dựng">{p.density ? `${formatNumber(p.density, 1)}%` : undefined}</InfoRow>
+              <InfoRow id="pf-scale" label="Quy mô">{p.scale}</InfoRow>
+              <InfoRow id="pf-totalUnits" label="Tổng số sản phẩm">{p.totalUnits ? p.totalUnits.toLocaleString('vi-VN') : undefined}</InfoRow>
+              <InfoRow id="pf-productTypes" label="Loại hình">{p.productTypes.map((t) => PROPERTY_TYPE_LABEL[t]).join(', ') || undefined}</InfoRow>
+              <InfoRow id="pf-unitAreaRange" label="Diện tích sản phẩm">{p.unitAreaRange}</InfoRow>
+              <InfoRow id="pf-startDate" label="Khởi công">{p.startDate}</InfoRow>
+              <InfoRow id="pf-handover" label="Bàn giao">{p.handover}</InfoRow>
+              <InfoRow id="pf-construction" label="Tiến độ hiện tại">{p.construction}</InfoRow>
+              <InfoRow id="pf-handoverStandard" label="Tiêu chuẩn bàn giao">{p.handoverStandard}</InfoRow>
+              <InfoRow id="pf-managementFee" label="Phí quản lý">{p.managementFee}</InfoRow>
+              <InfoRow id="pf-parkingFee" label="Phí gửi xe">{p.parkingFee}</InfoRow>
             </dl>
           </Card>
         )}
 
         {(p.priceFrom || p.priceTo || p.unitPrice || p.unitTypes.length > 0) && (
-          <Card>
+          <Card id="pf-price">
             <CardHeader
               title="Sản phẩm & giá"
               icon={Banknote}
               description={[formatPriceRange(p.priceFrom, p.priceTo), p.unitPrice].filter(Boolean).join(' · ') || undefined}
             />
-            {p.priceNote && <p className="border-b border-slate-100 px-4 py-2.5 text-[13px] text-slate-600 sm:px-5">{p.priceNote}</p>}
+            {p.priceNote && (
+              <p id="pf-priceNote" className="border-b border-slate-100 px-4 py-2.5 text-[13px] text-slate-600 sm:px-5">
+                {p.priceNote}
+              </p>
+            )}
             <UnitTypesTable rows={p.unitTypes} />
           </Card>
         )}
@@ -456,9 +468,9 @@ function OverviewTab({ project: p, editable, privacy, onAddImages }: { project: 
           <Card>
             <CardHeader title="Thanh toán & chính sách" icon={HandCoins} />
             <div className="divide-y divide-slate-100">
-              {p.paymentPlan && <TextRow label="Phương thức thanh toán" text={p.paymentPlan} />}
-              {p.banks && <TextRow label="Ngân hàng bảo lãnh / cho vay" text={p.banks} />}
-              {p.salesPolicy && <TextRow label="Chính sách bán hàng" text={p.salesPolicy} />}
+              {p.paymentPlan && <TextRow label="Phương thức thanh toán" text={p.paymentPlan} field="paymentPlan" />}
+              {p.banks && <TextRow label="Ngân hàng bảo lãnh / cho vay" text={p.banks} field="banks" />}
+              {p.salesPolicy && <TextRow label="Chính sách bán hàng" text={p.salesPolicy} field="salesPolicy" />}
             </div>
           </Card>
         )}
@@ -470,7 +482,7 @@ function OverviewTab({ project: p, editable, privacy, onAddImages }: { project: 
             <CardHeader title="Vị trí & kết nối" icon={Route} />
             <div className="space-y-3 p-4 sm:p-5">
               {formatProjectAddress(p) && (
-                <p className="flex gap-2 text-sm text-slate-700">
+                <p id="pf-address" className="flex gap-2 text-sm text-slate-700">
                   <MapPin size={16} className="mt-0.5 shrink-0 text-slate-400" />
                   {formatProjectAddress(p)}
                 </p>
@@ -487,9 +499,9 @@ function OverviewTab({ project: p, editable, privacy, onAddImages }: { project: 
                   </a>
                 )}
               </div>
-              {p.connectivity && <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">{p.connectivity}</p>}
+              {p.connectivity && <TextLines text={p.connectivity} idPrefix="pf-connectivity" className="text-sm leading-relaxed text-slate-700" />}
               {p.nearby.length > 0 && (
-                <div>
+                <div id="pf-nearby">
                   <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-400">Tiện ích ngoại khu</h3>
                   <ul className="space-y-1">
                     {p.nearby.map((n) => (
@@ -504,7 +516,7 @@ function OverviewTab({ project: p, editable, privacy, onAddImages }: { project: 
           </Card>
         )}
         {p.amenities.length > 0 && (
-          <Card>
+          <Card id="pf-amenities">
             <CardHeader title="Tiện ích nội khu" icon={Sparkles} />
             <div className="flex flex-wrap gap-2 p-4 sm:p-5">
               {p.amenities.map((a) => (
@@ -515,6 +527,7 @@ function OverviewTab({ project: p, editable, privacy, onAddImages }: { project: 
             </div>
           </Card>
         )}
+        {privacy && <PublicFaqCard project={p} />}
         {!privacy && (p.cautions || p.commission) && (
           <Card className="border-amber-200/80">
             <CardHeader title="Lưu ý nội bộ" icon={Lock} className="bg-amber-50/60" />
@@ -543,11 +556,11 @@ function OverviewTab({ project: p, editable, privacy, onAddImages }: { project: 
   );
 }
 
-function TextRow({ label, text }: { label: string; text: string }) {
+function TextRow({ label, text, field }: { label: string; text: string; field: string }) {
   return (
-    <div className="px-4 py-3 sm:px-5">
+    <div id={`pf-${field}`} className="px-4 py-3 sm:px-5">
       <div className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-400">{label}</div>
-      <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">{text}</p>
+      <TextLines text={text} idPrefix={`pf-${field}`} className="text-sm leading-relaxed text-slate-700" />
     </div>
   );
 }
@@ -631,13 +644,13 @@ function ImagesTab({ project, editable, onManage }: { project: Project; editable
 }
 
 function InternalTab({ project: p }: { project: Project }) {
-  const blocks: Array<{ title: string; icon: LucideIcon; text: string }> = [
-    { title: 'Điểm cần lưu ý khi tư vấn', icon: TriangleAlert, text: p.cautions },
-    { title: 'So sánh dự án cạnh tranh', icon: Swords, text: p.competitors },
-    { title: 'Thị trường thứ cấp & cho thuê', icon: TrendingUp, text: p.marketInfo },
-    { title: 'Chính sách hoa hồng', icon: HandCoins, text: p.commission },
-    { title: 'Danh bạ đầu mối', icon: Users, text: p.contacts },
-    { title: 'Ghi chú nội bộ', icon: StickyNote, text: p.internalNotes },
+  const blocks: Array<{ title: string; icon: LucideIcon; text: string; field: string }> = [
+    { title: 'Điểm cần lưu ý khi tư vấn', icon: TriangleAlert, text: p.cautions, field: 'cautions' },
+    { title: 'So sánh dự án cạnh tranh', icon: Swords, text: p.competitors, field: 'competitors' },
+    { title: 'Thị trường thứ cấp & cho thuê', icon: TrendingUp, text: p.marketInfo, field: 'marketInfo' },
+    { title: 'Chính sách hoa hồng', icon: HandCoins, text: p.commission, field: 'commission' },
+    { title: 'Danh bạ đầu mối', icon: Users, text: p.contacts, field: 'contacts' },
+    { title: 'Ghi chú nội bộ', icon: StickyNote, text: p.internalNotes, field: 'internalNotes' },
   ].filter((b) => b.text.trim());
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -659,11 +672,7 @@ function InternalTab({ project: p }: { project: Project }) {
             />
           </Card>
         ) : (
-          blocks.map((b) => (
-            <TextBlock key={b.title} title={b.title} icon={b.icon} tone="internal">
-              {b.text}
-            </TextBlock>
-          ))
+          blocks.map((b) => <TextBlock key={b.title} title={b.title} icon={b.icon} text={b.text} field={b.field} tone="internal" />)
         )}
       </div>
     </div>

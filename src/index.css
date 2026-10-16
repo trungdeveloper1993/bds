@@ -104,6 +104,52 @@
   }
 }
 
+/* "Hỏi nhanh" → nháy sáng đoạn vừa nhảy tới trong hồ sơ. */
+@keyframes sf-flash {
+  0%,
+  35% {
+    background-color: #fef3c7;
+    box-shadow:
+      0 0 0 6px #fef3c7,
+      0 0 0 7px #fcd34d;
+  }
+  100% {
+    background-color: transparent;
+    box-shadow:
+      0 0 0 6px transparent,
+      0 0 0 7px transparent;
+  }
+}
+@keyframes sf-flash-bg {
+  0%,
+  35% {
+    background-color: #fef3c7;
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.sf-flash {
+  animation: sf-flash 2.2s ease-out;
+  border-radius: 6px;
+}
+tr.sf-flash {
+  animation: none;
+}
+tr.sf-flash > td {
+  animation: sf-flash-bg 2.2s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sf-flash,
+  tr.sf-flash > td {
+    animation-duration: 0.01ms;
+  }
+  .sf-flash {
+    outline: 2px solid #fcd34d;
+    outline-offset: 4px;
+  }
+}
+
 @media print {
   @page {
     size: A4;

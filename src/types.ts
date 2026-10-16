@@ -68,6 +68,8 @@ export interface FaqItem {
   id: string;
   question: string;
   answer: string;
+  /** Câu trả lời dùng được cả khi đưa máy cho khách xem. */
+  isPublic: boolean;
 }
 
 export interface Project {

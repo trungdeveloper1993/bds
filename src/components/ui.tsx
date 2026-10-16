@@ -652,15 +652,37 @@ export function Spinner({ className }: { className?: string }) {
 }
 
 /** Một dòng thông số: nhãn bên trái, giá trị bên phải. */
-export function InfoRow({ label, children, icon: Icon }: { label: ReactNode; children: ReactNode; icon?: LucideIcon }) {
+export function InfoRow({ label, children, icon: Icon, id }: { label: ReactNode; children: ReactNode; icon?: LucideIcon; id?: string }) {
   if (children === undefined || children === null || children === '' || children === false) return null;
   return (
-    <div className="flex items-start justify-between gap-4 py-2.5 text-sm">
+    <div id={id} className="flex items-start justify-between gap-4 py-2.5 text-sm">
       <dt className="flex shrink-0 items-center gap-2 text-slate-500">
         {Icon && <Icon size={15} className="text-slate-400" />}
         {label}
       </dt>
       <dd className="min-w-0 text-right font-semibold text-slate-800">{children}</dd>
+    </div>
+  );
+}
+
+/**
+ * Khối văn bản nhiều dòng; mỗi dòng có id riêng (`${idPrefix}-l${số dòng}`) để
+ * "Hỏi nhanh" nhảy tới đúng dòng trả lời.
+ */
+export function TextLines({ text, idPrefix, className }: { text: string; idPrefix: string; className?: string }) {
+  return (
+    <div className={className}>
+      {text.split('\n').map((line, i) =>
+        line.trim() ? (
+          <span key={i} id={`${idPrefix}-l${i}`} className="block">
+            {line}
+          </span>
+        ) : (
+          <span key={i} className="block" aria-hidden>
+            {' '}
+          </span>
+        ),
+      )}
     </div>
   );
 }
