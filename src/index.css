@@ -1,51 +1,117 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Space Grotesk", sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --font-sans: 'Be Vietnam Pro', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* Màu thương hiệu (thang xanh dương) — đổi tại đây để đổi tông toàn ứng dụng. */
+  --color-brand-50: oklch(97% 0.014 254.604);
+  --color-brand-100: oklch(93.2% 0.032 255.585);
+  --color-brand-200: oklch(88.2% 0.059 254.128);
+  --color-brand-300: oklch(80.9% 0.105 251.813);
+  --color-brand-400: oklch(70.7% 0.165 254.624);
+  --color-brand-500: oklch(62.3% 0.214 259.815);
+  --color-brand-600: oklch(54.6% 0.245 262.881);
+  --color-brand-700: oklch(48.8% 0.243 264.376);
+  --color-brand-800: oklch(42.4% 0.199 265.638);
+  --color-brand-900: oklch(37.9% 0.146 265.522);
+  --color-brand-950: oklch(28.2% 0.091 267.935);
+
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-pop-in: pop-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  --animate-slide-up: slide-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes slide-up {
+    from {
+      opacity: 0.6;
+      transform: translateY(24px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
 }
 
-/* Custom styles for Leaflet Map */
-.leaflet-container {
-  font-family: "Inter", sans-serif;
-  z-index: 10;
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* Leaflet control placement fixes */
-.leaflet-top, .leaflet-bottom {
-  z-index: 20;
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
 }
 
-/* Scrollbar customization */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
-::-webkit-scrollbar-track {
-  background: #f1f5f9;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply min-h-dvh bg-slate-100/70 font-sans text-slate-900 antialiased;
+  }
+
+  ::selection {
+    @apply bg-brand-200 text-brand-950;
+  }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  label[for],
+  select {
+    cursor: pointer;
+  }
+
+  /* Ẩn mũi tên tăng/giảm của ô số. */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+
+  a:focus-visible,
+  button:focus-visible,
+  [tabindex]:focus-visible,
+  summary:focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-500;
+  }
 }
 
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-/* Map marker styling custom overrides */
-.custom-map-marker {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: white;
-  border: 2px solid #3b82f6;
-  border-radius: 50%;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-  color: #1e3a8a;
-  font-weight: bold;
-  font-size: 11px;
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  body {
+    @apply bg-white;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }

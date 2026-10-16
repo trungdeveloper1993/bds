@@ -1,25 +1,15 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
-import {defineConfig} from 'vite';
+import { defineConfig } from 'vite';
 
-export default defineConfig(() => {
-  return {
-    // Use relative asset paths so the build works when served from a
-    // GitHub Pages project subpath (e.g. https://<user>.github.io/bds/).
-    base: './',
-    plugins: [react(), tailwindcss()],
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
-      },
-    },
-    server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
-    },
-  };
+export default defineConfig({
+  // Use relative asset paths so the build works when served from a
+  // GitHub Pages project subpath (e.g. https://<user>.github.io/bds/).
+  base: './',
+  plugins: [react(), tailwindcss()],
+  build: {
+    // Cố ý giữ một gói JS duy nhất: service worker lưu trọn ứng dụng để mọi
+    // trang đều mở được khi offline (chia nhỏ theo trang sẽ thiếu trang chưa mở).
+    chunkSizeWarningLimit: 900,
+  },
 });
