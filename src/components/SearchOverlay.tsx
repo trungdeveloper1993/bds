@@ -1,10 +1,11 @@
-import { ArrowRight, Building2, CornerDownLeft, House, Search, X } from 'lucide-react';
+import { ArrowRight, Building2, CornerDownLeft, House, MessageCircleQuestion, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { DOC_CATEGORY, PROJECT_STAGE, PROPERTY_TYPE_LABEL, propertyStatusLabel, PROPERTY_STATUS, CUSTOMER_STATUS } from '../constants';
 import { formatPhone, formatPrice } from '../lib/format';
 import { formatAddress, formatProjectAddress } from '../lib/listing';
 import { navigate } from '../lib/router';
+import { askProject, buildProjectIndex, findProjectMention, type AnswerGroup, type Verdict } from '../lib/smartfind';
 import { buildHaystack, matchesQuery, normalize } from '../lib/text';
 import { useData } from '../store/data';
 import { useUI } from '../store/ui';
@@ -14,6 +15,7 @@ import { ImageView } from './media';
 import { Avatar, Badge, cn } from './ui';
 
 type Result =
+  | { kind: 'answer'; id: string; item: Project; rest: string; answer?: AnswerGroup; verdict?: Verdict; score: number }
   | { kind: 'project'; id: string; item: Project; score: number }
   | { kind: 'doc'; id: string; item: DocumentRef; owner: string; path: string; score: number }
   | { kind: 'property'; id: string; item: Property; score: number }
@@ -172,7 +174,18 @@ export function SearchOverlay() {
         .map((x): Result & { kind: 'customer' } => ({ kind: 'customer', id: x.item.id, item: x.item, score: scoreOf(x.item.name, q) })),
     );
     const enc = encodeURIComponent(q);
+    // "aurora bàn giao khi nào" → trả lời luôn từ hồ sơ dự án được nhắc tên.
+    const answers: Result[] = [];
+    const mention = findProjectMention(q, projects);
+    if (mention) {
+      const units = properties.filter((x) => x.projectId === mention.project.id);
+      const r = askProject(buildProjectIndex(mention.project, units, { privacy }), mention.rest);
+      if (r.best || r.verdict || r.related.length) {
+        answers.push({ kind: 'answer', id: mention.project.id, item: mention.project, rest: mention.rest, answer: r.best ?? r.related[0], verdict: r.verdict, score: 99 });
+      }
+    }
     return [
+      { key: 'answer', title: mention ? `Trả lời nhanh · ${mention.project.name}` : '', total: 0, all: '', results: answers },
       { key: 'projects', title: 'Dự án', total: projectsFound.length, all: `/du-an?q=${enc}`, results: projectsFound.slice(0, LIMIT) as Result[] },
       { key: 'docs', title: 'Tài liệu', total: docsFound.length, all: '', results: docsFound.slice(0, 10) as Result[] },
       { key: 'properties', title: 'Bất động sản', total: propertiesFound.length, all: `/bds?q=${enc}`, results: propertiesFound.slice(0, LIMIT) as Result[] },
@@ -194,7 +207,8 @@ export function SearchOverlay() {
   };
 
   const activate = (r: Result) => {
-    if (r.kind === 'project') go(`/du-an/${r.id}`);
+    if (r.kind === 'answer') go(`/du-an/${r.id}?hoi=${encodeURIComponent(r.rest)}`);
+    else if (r.kind === 'project') go(`/du-an/${r.id}`);
     else if (r.kind === 'property') go(`/bds/${r.id}`);
     else if (r.kind === 'customer') go(`/khach/${r.id}`);
     else go(r.path);
@@ -302,7 +316,18 @@ function ResultRow({
   let subtitle: ReactNode;
   let trailing: ReactNode = null;
 
-  if (result.kind === 'project') {
+  if (result.kind === 'answer') {
+    const a = result.answer;
+    leading = (
+      <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+        <MessageCircleQuestion size={20} />
+      </span>
+    );
+    const value = a ? (a.top.kind === 'faq' ? a.top.text : a.hits.map((h) => (a.top.kind === 'unitType' || a.top.kind === 'legal' ? `${h.title}: ${h.text}` : h.text)).join(' · ')) : '';
+    title = result.verdict ? `${result.verdict.label} — ${result.verdict.detail}` : value || result.rest;
+    subtitle = `“${result.rest}” · ${a ? (a.top.kind === 'faq' ? 'Hỏi đáp' : a.top.title) : 'Hồ sơ dự án'}`;
+    trailing = <ArrowRight size={16} className="text-brand-600" />;
+  } else if (result.kind === 'project') {
     const p = result.item;
     leading = <ImageView id={p.images[0]} placeholderIcon={Building2} className="size-11 shrink-0 rounded-xl" />;
     title = p.name;
@@ -360,7 +385,7 @@ function ResultRow({
     >
       {leading}
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold text-slate-900">{title}</div>
+        <div className={cn('text-sm font-semibold text-slate-900', result.kind === 'answer' ? 'line-clamp-2' : 'truncate')}>{title}</div>
         <div className="truncate text-xs text-slate-500">{subtitle}</div>
       </div>
       <div className="shrink-0">{trailing}</div>

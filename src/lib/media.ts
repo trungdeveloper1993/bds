@@ -92,12 +92,23 @@ export function isImageFile(file: File): boolean {
 
 /** Nén ảnh (tối đa 1920px) + tạo ảnh thu nhỏ, lưu vào IndexedDB, trả về id. */
 export async function saveImage(file: Blob): Promise<string> {
+  return (await saveImageSized(file)).id;
+}
+
+/**
+ * Như saveImage nhưng cho chọn cỡ / chất lượng và trả về kích thước ảnh.
+ * Bản đồ mặt bằng cần nét hơn (tối đa 4000px) để phóng to vẫn đọc được số căn.
+ */
+export async function saveImageSized(
+  file: Blob,
+  options: { maxSize?: number; quality?: number } = {},
+): Promise<{ id: string; width: number; height: number }> {
   const decoded = await decodeImage(file);
   try {
-    const fullCanvas = drawScaled(decoded.source, decoded.width, decoded.height, FULL_MAX);
+    const fullCanvas = drawScaled(decoded.source, decoded.width, decoded.height, options.maxSize ?? FULL_MAX);
     // Thu nhỏ từ bản lớn để ảnh mịn hơn so với thu nhỏ một bước.
     const thumbCanvas = drawScaled(fullCanvas, fullCanvas.width, fullCanvas.height, THUMB_MAX);
-    const [full, thumb] = await Promise.all([toJpeg(fullCanvas, 0.82), toJpeg(thumbCanvas, 0.76)]);
+    const [full, thumb] = await Promise.all([toJpeg(fullCanvas, options.quality ?? 0.82), toJpeg(thumbCanvas, 0.76)]);
     const record: StoredImage = {
       id: uid(),
       full,
@@ -107,7 +118,7 @@ export async function saveImage(file: Blob): Promise<string> {
       createdAt: new Date().toISOString(),
     };
     await db.put('images', record);
-    return record.id;
+    return { id: record.id, width: record.width, height: record.height };
   } finally {
     decoded.release();
   }

@@ -7,6 +7,18 @@ Bản đang chạy: https://trungdeveloper1993.github.io/bds/
 ## Tính năng chính
 
 **Dự án** — hồ sơ chuẩn cho từng dự án
+- **Hỏi nhanh về dự án**: khách hỏi gì, gõ (hoặc nói) đúng câu đó — *"bàn giao khi nào"*, *"vay được bao nhiêu %"*, *"có hồ bơi không"*, *"căn 2pn dưới 4 tỷ"*… — hiện ngay đoạn thông tin tương ứng trong hồ sơ, kèm câu trả lời mẫu để copy gửi Zalo và nút nhảy tới đúng dòng trong hồ sơ.
+  - Hiểu tiếng Việt có dấu / không dấu và viết tắt (2pn, cđt, ls, ko, đc, bn…); gõ có dấu thì phân biệt được *giá / gia đình*, *vay / vậy*, *sổ / số*.
+  - Hỏi "có … không" → kết luận **Có / Đã có / Chưa thấy trong hồ sơ** (không đoán bừa khi hồ sơ chưa có), kể cả tiện ích đồng nghĩa (hỏi "trường học" ra "Trường quốc tế…").
+  - Lọc căn trong giỏ hàng theo số phòng ngủ, tầm giá, diện tích, hướng; tìm tài liệu cần gửi (bảng giá, hợp đồng mẫu…) để mở / tải / chia sẻ ngay.
+  - Ưu tiên câu trả lời chuẩn trong Q&A; câu hồ sơ chưa có thì ghi lại vào Q&A chỉ với một chạm. Q&A có tuỳ chọn **Cho khách xem**.
+  - Ở chế độ khách xem chỉ tìm trong thông tin gửi khách được. Ô tìm kiếm chung cũng trả lời được khi gõ kèm tên dự án (*"aurora bàn giao khi nào"*).
+- **Mặt bằng tương tác & bảng hàng**: tải ảnh mặt bằng tầng, sơ đồ phân lô hay phối cảnh của CĐT, khoanh từng căn — khách chạm vào căn là thấy hình mẫu, giá, diện tích, hướng, còn hay đã bán.
+  - Khoanh căn: kéo vẽ ô chữ nhật, chạm từng góc để vẽ đa giác; khoanh cả dãy rồi **Chia đều** thành từng căn; nhân bản dãy, chạm để đánh số, đánh số lẻ / chẵn; tự hít vào góc ô bên cạnh; hoàn tác.
+  - Chung cư: một mặt bằng tầng điển hình dùng cho nhiều tầng, mã căn tự ghép (VD `A-12-05`); xem theo tầng hoặc **bảng tầng** cả toà.
+  - Bảng hàng: dán từ Excel / Google Sheets hoặc mở file .xlsx — tự nhận cột (mã căn, loại, diện tích, giá, hướng, trạng thái), khớp mã ghi khác kiểu (`A-12-05` = `A1205`); cập nhật hằng ngày bằng cách dán bảng mới hoặc chạm vào căn → "Đã cọc".
+  - Tô màu theo trạng thái / loại căn / mức giá / hướng (màu tuỳ chỉnh), lọc căn bằng câu tự nhiên (*"2pn dưới 4 tỷ hướng đông nam còn hàng"*), toàn màn hình trên điện thoại, tuỳ chọn ẩn giá khi khách xem.
+  - **Dự án mẫu** để xem thử ngay (tab Mặt bằng → *Xem dự án mẫu*): mặt bằng 16 căn/tầng, hình mẫu 1PN+1 / 2PN / 3PN và bảng hàng 336 căn — toàn bộ là minh hoạ do ứng dụng tự tạo, xoá được bất cứ lúc nào.
 - Tổng quan: chủ đầu tư & đối tác, vị trí (địa chỉ mới sau sáp nhập + địa chỉ cũ), quy mô, mật độ, bảng loại sản phẩm, giá, đơn giá, thanh toán, ngân hàng, tiêu chuẩn bàn giao, phí quản lý, liên kết vùng, tiện ích nội/ngoại khu, điểm nổi bật.
 - **Tài liệu** theo 12 nhóm của bộ tài liệu bán hàng (pháp lý, bảng giá & giỏ hàng, chính sách, thanh toán & vay, mặt bằng, bàn giao & vận hành, giới thiệu, hợp đồng & biểu mẫu, tiến độ, hình ảnh, đào tạo & Q&A…). Giữ nguyên file gốc (PDF, Word, Excel, ảnh…), tự đoán nhóm từ tên file, ngày áp dụng, đánh dấu **hết hiệu lực** khi có bảng giá mới, phân quyền **Gửi khách được / Nội bộ**, mở – tải về – chia sẻ Zalo.
 - **Checklist 12 hồ sơ pháp lý** theo Luật KDBĐS 2023, Luật Nhà ở 2023, Luật Đất đai 2024 (trạng thái, số/ngày văn bản, gắn file) và thẻ ghi nhớ quy định khi tư vấn.

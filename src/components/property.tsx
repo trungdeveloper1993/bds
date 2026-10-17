@@ -143,16 +143,18 @@ export function PropertyRow({
   privacy,
   trailing,
   onClick,
+  id,
 }: {
   property: Property;
   project?: Project;
   privacy: boolean;
   trailing?: ReactNode;
   onClick?: () => void;
+  id?: string;
 }) {
   const p = property;
   return (
-    <div className="flex items-center gap-3 px-4 py-3 transition hover:bg-slate-50/80 sm:px-5">
+    <div id={id} className="flex items-center gap-3 px-4 py-3 transition hover:bg-slate-50/80 sm:px-5">
       <button type="button" onClick={onClick ?? (() => navigate(`/bds/${p.id}`))} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         <ImageView id={p.images[0]} className="h-16 w-20 shrink-0 rounded-xl sm:h-[72px] sm:w-24" />
         <div className="min-w-0 flex-1">

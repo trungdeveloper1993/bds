@@ -191,7 +191,7 @@ function DocumentRow({
   onDelete: () => void;
 }) {
   return (
-    <li className={cn('flex items-center gap-3 px-4 py-3 sm:px-5', doc.archived && 'bg-slate-50/70')}>
+    <li id={`doc-${doc.id}`} className={cn('flex items-center gap-3 px-4 py-3 sm:px-5', doc.archived && 'bg-slate-50/70')}>
       <FileTypeIcon type={doc.type} name={doc.name} className={doc.archived ? 'opacity-50' : ''} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">

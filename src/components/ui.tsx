@@ -448,6 +448,9 @@ export function Modal({
 }) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  // Trang phía sau vẽ lại (onClose là hàm mới) không được làm con trỏ nhảy về ô đầu tiên.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -455,12 +458,13 @@ export function Modal({
     const { overflow } = document.body.style;
     document.body.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && dismissible) onClose();
+      if (e.key === 'Escape' && dismissible) closeRef.current();
     };
     window.addEventListener('keydown', onKey);
-    // Đưa con trỏ vào ô nhập đầu tiên (hoặc chính hộp thoại).
+    // Đưa con trỏ vào ô nhập đầu tiên (hoặc chính hộp thoại) — trừ khi người dùng đã bấm vào ô khác.
     const timer = window.setTimeout(() => {
       const panel = panelRef.current;
+      if (panel?.contains(document.activeElement)) return;
       const target = panel?.querySelector<HTMLElement>('[data-autofocus], input:not([type=hidden]), textarea, select');
       (target ?? panel)?.focus();
     }, 30);
@@ -470,7 +474,7 @@ export function Modal({
       document.body.style.overflow = overflow;
       previous?.focus?.();
     };
-  }, [open, onClose, dismissible]);
+  }, [open, dismissible]);
 
   if (!open) return null;
 
@@ -652,15 +656,37 @@ export function Spinner({ className }: { className?: string }) {
 }
 
 /** Một dòng thông số: nhãn bên trái, giá trị bên phải. */
-export function InfoRow({ label, children, icon: Icon }: { label: ReactNode; children: ReactNode; icon?: LucideIcon }) {
+export function InfoRow({ label, children, icon: Icon, id }: { label: ReactNode; children: ReactNode; icon?: LucideIcon; id?: string }) {
   if (children === undefined || children === null || children === '' || children === false) return null;
   return (
-    <div className="flex items-start justify-between gap-4 py-2.5 text-sm">
+    <div id={id} className="flex items-start justify-between gap-4 py-2.5 text-sm">
       <dt className="flex shrink-0 items-center gap-2 text-slate-500">
         {Icon && <Icon size={15} className="text-slate-400" />}
         {label}
       </dt>
       <dd className="min-w-0 text-right font-semibold text-slate-800">{children}</dd>
+    </div>
+  );
+}
+
+/**
+ * Khối văn bản nhiều dòng; mỗi dòng có id riêng (`${idPrefix}-l${số dòng}`) để
+ * "Hỏi nhanh" nhảy tới đúng dòng trả lời.
+ */
+export function TextLines({ text, idPrefix, className }: { text: string; idPrefix: string; className?: string }) {
+  return (
+    <div className={className}>
+      {text.split('\n').map((line, i) =>
+        line.trim() ? (
+          <span key={i} id={`${idPrefix}-l${i}`} className="block">
+            {line}
+          </span>
+        ) : (
+          <span key={i} className="block" aria-hidden>
+            {' '}
+          </span>
+        ),
+      )}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { CustomerDetail } from './pages/CustomerDetail';
 import { CustomerForm } from './pages/CustomerForm';
 import { CustomerList } from './pages/CustomerList';
 import { Dashboard } from './pages/Dashboard';
+import { MapEditor } from './pages/MapEditor';
 import { NotFound, PrivacyLocked } from './pages/NotFound';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { ProjectForm } from './pages/ProjectForm';
@@ -87,7 +88,7 @@ function Root() {
 function RouteView() {
   const { segments } = useLocation();
   const { privacy } = useUI();
-  const [section, id, action] = segments;
+  const [section, id, action, sub] = segments;
   const locked = <PrivacyLocked />;
 
   switch (section) {
@@ -97,6 +98,7 @@ function RouteView() {
       if (!id) return <ProjectList />;
       if (id === 'moi') return privacy ? locked : <ProjectForm />;
       if (action === 'sua') return privacy ? locked : <ProjectForm id={id} />;
+      if (action === 'ban-do' && sub) return privacy ? locked : <MapEditor projectId={id} mapId={sub} />;
       return <ProjectDetail id={id} />;
     case 'bds':
       if (!id) return <PropertyList />;

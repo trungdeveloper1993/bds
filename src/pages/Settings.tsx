@@ -6,6 +6,7 @@ import {
   FileSpreadsheet,
   HardDrive,
   KeyRound,
+  Map as MapIcon,
   Save,
   Share2,
   ShieldCheck,
@@ -17,6 +18,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { FieldGrid, useDraft } from '../components/form';
 import { ProvinceSelect } from '../components/inputs';
+import { MapDisplaySettings } from '../components/maps';
 import { Badge, Button, Card, CardHeader, Field, Modal, PageHeader, Segmented, TextInput } from '../components/ui';
 import { readBackup, createBackup, type BackupContent } from '../lib/backup';
 import { requestPersistentStorage, storageInfo } from '../lib/db';
@@ -36,6 +38,12 @@ export function Settings() {
       <div className="space-y-5">
         <ProfileCard />
         <PrivacyCard />
+        <Card>
+          <CardHeader title="Bản đồ mặt bằng" icon={MapIcon} description="Màu trạng thái căn, thông tin trên thẻ khi chạm vào căn, ẩn giá khi khách xem." />
+          <div className="p-4 sm:p-5">
+            <MapDisplaySettings />
+          </div>
+        </Card>
         <BackupCard />
         <ExportCard />
         <InstallCard />

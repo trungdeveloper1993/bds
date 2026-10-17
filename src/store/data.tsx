@@ -9,6 +9,7 @@ import {
   normalizeSettings,
 } from '../lib/defaults';
 import { nextCode, uid } from '../lib/id';
+import { projectImageIds } from '../lib/maps';
 import {
   collectGarbage,
   deleteFiles,
@@ -192,7 +193,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         commit(() => loaded);
         setStatus('ready');
         // Dọn ảnh / file mồ côi (chỉ chạy lúc khởi động, khi chưa có thao tác nào).
-        const usedImages = new Set([...loaded.projects, ...loaded.properties].flatMap((x) => x.images));
+        const usedImages = new Set([...loaded.projects.flatMap(projectImageIds), ...loaded.properties.flatMap((x) => x.images)]);
         const usedFiles = new Set([...loaded.projects, ...loaded.properties].flatMap((x) => x.documents.map((d) => d.id)));
         await collectGarbage(usedImages, usedFiles).catch(() => 0);
       })
@@ -249,7 +250,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           properties: st.properties.map((p) => units.find((u) => u.id === p.id) ?? p),
           customers: st.customers.map((c) => customers.find((u) => u.id === c.id) ?? c),
         }));
-        await deleteImages(project.images);
+        await deleteImages(projectImageIds(project));
         await deleteFiles(project.documents.map((d) => d.id));
       }),
     [commit, exclusive],
@@ -574,8 +575,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
           await db.putMany('files', files);
           // Chỉ điền các mục cài đặt còn trống trên máy này.
           const merged: Settings = { ...s.settings };
+          const fill = merged as unknown as Record<string, unknown>;
           for (const key of Object.keys(merged) as Array<keyof Settings>) {
-            if (!merged[key] && content.settings[key]) merged[key] = content.settings[key];
+            const theirs = content.settings[key];
+            if (typeof merged[key] === 'string' && !merged[key] && typeof theirs === 'string' && theirs) fill[key] = theirs;
           }
           await db.put('meta', merged, 'settings');
           summary = {
