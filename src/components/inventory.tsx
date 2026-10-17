@@ -14,13 +14,25 @@ import {
   type ColumnMap,
   type InventoryField,
 } from '../lib/inventory';
-import { compareCodes, indexByCode, normCode, resolveItem, unitMatcher, type CodeIndex, type MapContext, type ResolvedUnit, type UnitLocation } from '../lib/maps';
+import { guessLayout, layoutFinder, setAssignments } from '../lib/layouts';
+import {
+  compareCodes,
+  indexByCode,
+  normCode,
+  positionOf,
+  resolveItem,
+  unitMatcher,
+  type CodeIndex,
+  type MapContext,
+  type ResolvedUnit,
+  type UnitLocation,
+} from '../lib/maps';
 import { downloadBlob } from '../lib/media';
 import { foldText } from '../lib/smartfind';
 import { buildXlsx } from '../lib/xlsx';
 import { useData } from '../store/data';
 import { useUI } from '../store/ui';
-import type { Direction, InventoryItem, InventoryStatus, Project, UnitTypeRow } from '../types';
+import type { Direction, InventoryItem, InventoryStatus, Project, UnitLayout, UnitTypeRow } from '../types';
 import { EnumSelect, MoneyInput, NumberInput } from './inputs';
 import { ColorDot } from './mapcanvas';
 import { Badge, Button, Card, CardHeader, cn, Dropdown, EmptyState, Field, IconButton, Modal, SearchInput, Select, TextArea, TextInput, Toggle } from './ui';
@@ -106,12 +118,15 @@ export function InventoryPanel({
 
   const exportXlsx = () => {
     const sorted = [...rows].sort((a, b) => compareCodes(a.code, b.code));
+    // Cột "Mẫu căn" (khi dự án có thư viện hình mẫu): nhập lại file này là giữ được hình mẫu từng căn.
+    const withLayouts = project.layouts.length > 0;
     const blob = buildXlsx([
       {
         name: 'Bảng hàng',
         columns: [
           { header: 'Mã căn', width: 14 },
           { header: 'Loại căn', width: 16 },
+          ...(withLayouts ? [{ header: 'Mẫu căn', width: 14 }] : []),
           { header: 'Diện tích (m²)', width: 14 },
           { header: 'Giá (VND)', width: 18, money: true },
           { header: 'Đơn giá (triệu/m²)', width: 16 },
@@ -122,6 +137,7 @@ export function InventoryPanel({
         rows: sorted.map((r) => [
           r.code,
           r.type?.name,
+          ...(withLayouts ? [r.layout?.code] : []),
           r.area,
           hidePrice ? undefined : r.price,
           !hidePrice && r.price && r.area ? Math.round((r.price / r.area / 1e6) * 10) / 10 : undefined,
@@ -136,6 +152,7 @@ export function InventoryPanel({
 
   const toggleSort = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: key === 'price' || key === 'area' ? -1 : 1 }));
   const total = rows.length;
+  const hasLayouts = project.layouts.length > 0;
   const summary = INVENTORY_STATUSES.filter((s) => counts.get(s))
     .map((s) => `${counts.get(s)} ${INVENTORY_STATUS[s].label.toLowerCase()}`)
     .join(' · ');
@@ -208,11 +225,12 @@ export function InventoryPanel({
             <p className="px-5 py-8 text-center text-sm text-slate-500">Không có căn nào khớp.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-left text-sm">
+              <table className={cn('w-full text-left text-sm', hasLayouts ? 'min-w-[800px]' : 'min-w-[720px]')}>
                 <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                   <tr>
                     <SortTh label="Mã căn" k="code" sort={sort} onSort={toggleSort} className="pl-4 sm:pl-5" />
                     <SortTh label="Loại" k="type" sort={sort} onSort={toggleSort} />
+                    {hasLayouts && <th className="px-3 py-2.5 font-semibold">Mẫu</th>}
                     <SortTh label="Diện tích" k="area" sort={sort} onSort={toggleSort} align="right" />
                     <SortTh label="Giá" k="price" sort={sort} onSort={toggleSort} align="right" />
                     <th className="px-3 py-2.5 text-right font-semibold">Đơn giá</th>
@@ -238,6 +256,11 @@ export function InventoryPanel({
                           )}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-slate-700">{r.type?.name}</td>
+                        {hasLayouts && (
+                          <td className="whitespace-nowrap px-3 py-2 font-mono text-xs font-semibold text-slate-700" title={r.layout?.tags.join(' · ')}>
+                            {r.layout?.code}
+                          </td>
+                        )}
                         <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{r.area ? `${formatNumber(r.area, 1)} m²` : ''}</td>
                         <td className="whitespace-nowrap px-3 py-2 text-right font-semibold text-brand-800">{hidePrice ? 'Liên hệ' : r.price ? formatMoney(r.price) : ''}</td>
                         <td className="whitespace-nowrap px-3 py-2 text-right text-xs text-slate-500">{hidePrice ? '' : formatUnitPrice(r.price, r.area)}</td>
@@ -363,7 +386,7 @@ const columnLetter = (i: number) => {
   return s;
 };
 
-const FIELDS: InventoryField[] = ['code', 'type', 'area', 'price', 'status', 'direction', 'note'];
+const FIELDS: InventoryField[] = ['code', 'type', 'layout', 'area', 'price', 'status', 'direction', 'note'];
 
 const EXAMPLE = 'Mã căn\tLoại\tDiện tích\tGiá\tHướng\tTrạng thái\nA-12-05\t2PN\t68,5\t3,6 tỷ\tĐông Nam\tCòn\nA-12-06\t3PN\t92\t4.850.000.000\tTây Bắc\tĐã cọc';
 
@@ -378,6 +401,7 @@ export function InventoryImportModal({ project, open, onClose }: { project: Proj
   const [headerRow, setHeaderRow] = useState(-1);
   const [replace, setReplace] = useState(false);
   const [createTypes, setCreateTypes] = useState(true);
+  const [createLayouts, setCreateLayouts] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -390,6 +414,7 @@ export function InventoryImportModal({ project, open, onClose }: { project: Proj
       setError('');
       setReplace(false);
       setCreateTypes(true);
+      setCreateLayouts(true);
     }
   }
 
@@ -449,20 +474,56 @@ export function InventoryImportModal({ project, open, onClose }: { project: Proj
   const removed = replace && merged ? merged.items.filter((x) => !merged.touched.has(x.code)).length : 0;
   const typeName = (id?: string) => types.find((t) => t.id === id)?.name ?? '';
 
+  // Mẫu căn ghi trong bảng nhưng chưa có trong thư viện hình mẫu → đề nghị tạo (thêm ảnh sau).
+  const findLayout = useMemo(() => layoutFinder(project.layouts), [project.layouts]);
+  const newLayoutCodes = useMemo(() => {
+    const codes = new Map<string, string>();
+    for (const r of parsed) if (r.layout && !findLayout(r.layout)) codes.set(normCode(r.layout), r.layout.trim());
+    return [...codes.values()].slice(0, 80);
+  }, [parsed, findLayout]);
+
   const commit = async () => {
     if (!table || !parsed.length) return;
     setBusy(true);
     try {
-      let summary = { added: 0, updated: 0, removed: 0 };
+      let summary = { added: 0, updated: 0, removed: 0, layouts: 0, assigned: 0 };
       await patchProject(project.id, (cur) => {
         const unitTypes = createTypes && newTypes.length ? [...cur.unitTypes, ...newTypes.filter((t) => !matchUnitType(t.name, cur.unitTypes))] : cur.unitTypes;
-        const result = mergeInventory(cur.inventory, rowsToItems(table, columns, headerRow, unitTypes));
+        const rows = rowsToItems(table, columns, headerRow, unitTypes);
+        const result = mergeInventory(cur.inventory, rows);
         const inventory = replace ? result.items.filter((x) => result.touched.has(x.code)) : result.items;
-        summary = { added: result.added, updated: result.updated, removed: result.items.length - inventory.length };
-        return { unitTypes, inventory };
+        summary = { ...summary, added: result.added, updated: result.updated, removed: result.items.length - inventory.length };
+        if (columns.layout === undefined) return { unitTypes, inventory };
+
+        // Hình mẫu theo cột "Mẫu căn": gắn riêng từng căn (trùng hình mẫu theo ô trên mặt bằng thì khỏi gắn riêng).
+        let layouts = cur.layouts;
+        let find = layoutFinder(layouts);
+        if (createLayouts) {
+          const extra: UnitLayout[] = [];
+          for (const r of rows) {
+            if (!r.layout || find(r.layout) || extra.some((l) => normCode(l.code) === normCode(r.layout!))) continue;
+            const code = r.layout.trim();
+            const guess = guessLayout(code, unitTypes);
+            extra.push({ id: uid(), code, name: '', tags: guess.tags, images: [], typeId: guess.typeId, bedrooms: guess.bedrooms, note: '' });
+          }
+          if (extra.length) {
+            layouts = [...layouts, ...extra];
+            find = layoutFinder(layouts);
+            summary.layouts = extra.length;
+          }
+        }
+        const changes = rows.flatMap((r) => {
+          const layout = r.layout ? find(r.layout) : undefined;
+          if (!layout) return [];
+          return [{ code: r.code, layoutId: positionOf(cur.maps, r.code)?.layoutId === layout.id ? undefined : layout.id }];
+        });
+        summary.assigned = changes.length;
+        return { unitTypes, inventory, layouts, layoutAssignments: setAssignments(cur.layoutAssignments, changes) };
       });
       toast(
-        `Đã cập nhật bảng hàng: ${summary.added} căn mới, ${summary.updated} căn cập nhật${summary.removed ? `, bỏ ${summary.removed} căn không còn trong bảng` : ''}`,
+        `Đã cập nhật bảng hàng: ${summary.added} căn mới, ${summary.updated} căn cập nhật${summary.removed ? `, bỏ ${summary.removed} căn không còn trong bảng` : ''}${
+          summary.assigned ? `, gắn hình mẫu cho ${summary.assigned} căn` : ''
+        }${summary.layouts ? ` (tạo ${summary.layouts} mẫu căn mới — thêm ảnh trong mục Hình mẫu căn)` : ''}`,
       );
       onClose();
     } catch (e) {
@@ -541,7 +602,7 @@ export function InventoryImportModal({ project, open, onClose }: { project: Proj
             <Button icon={FileSpreadsheet} onClick={() => fileRef.current?.click()} loading={busy}>
               Mở file Excel / CSV
             </Button>
-            <span className="text-xs text-slate-500">Chỉ cần cột mã căn; các cột khác (loại, diện tích, giá, hướng, trạng thái, ghi chú) có cột nào nhận cột đó.</span>
+            <span className="text-xs text-slate-500">Chỉ cần cột mã căn; các cột khác (loại, mẫu căn, diện tích, giá, hướng, trạng thái, ghi chú) có cột nào nhận cột đó.</span>
           </div>
           {error && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p>}
         </div>
@@ -622,7 +683,7 @@ export function InventoryImportModal({ project, open, onClose }: { project: Proj
                 <table className="w-full min-w-[560px] text-left text-xs">
                   <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                     <tr>
-                      {['Mã căn', 'Loại', 'Diện tích', 'Giá', 'Hướng', 'Trạng thái', 'Ghi chú'].map((h) => (
+                      {['Mã căn', 'Loại', ...(columns.layout !== undefined ? ['Mẫu'] : []), 'Diện tích', 'Giá', 'Hướng', 'Trạng thái', 'Ghi chú'].map((h) => (
                         <th key={h} className="px-2.5 py-2 font-semibold">
                           {h}
                         </th>
@@ -634,6 +695,12 @@ export function InventoryImportModal({ project, open, onClose }: { project: Proj
                       <tr key={`${r.code}-${i}`} className={r.warnings.length ? 'bg-amber-50/60' : ''}>
                         <td className="whitespace-nowrap px-2.5 py-1.5 font-bold text-slate-900">{r.code}</td>
                         <td className="whitespace-nowrap px-2.5 py-1.5">{typeName(r.item.typeId)}</td>
+                        {columns.layout !== undefined && (
+                          <td className="whitespace-nowrap px-2.5 py-1.5 font-mono font-semibold">
+                            {r.layout}
+                            {r.layout && !findLayout(r.layout) && <span className="ml-1 font-sans font-normal text-slate-400">(mới)</span>}
+                          </td>
+                        )}
                         <td className="whitespace-nowrap px-2.5 py-1.5 tabular-nums">{r.item.area ? `${formatNumber(r.item.area, 1)} m²` : ''}</td>
                         <td className="whitespace-nowrap px-2.5 py-1.5 font-semibold text-brand-800">{r.item.price ? formatMoney(r.item.price) : ''}</td>
                         <td className="whitespace-nowrap px-2.5 py-1.5">{r.item.direction ? DIRECTION_LABEL[r.item.direction] : ''}</td>
@@ -664,6 +731,14 @@ export function InventoryImportModal({ project, open, onClose }: { project: Proj
               description="Để gắn hình mẫu cho từng loại căn (Sửa dự án → Sản phẩm & giá)."
             />
           )}
+          {newLayoutCodes.length > 0 && (
+            <Toggle
+              checked={createLayouts}
+              onChange={setCreateLayouts}
+              label={`Tạo ${newLayoutCodes.length} mẫu căn mới: ${newLayoutCodes.slice(0, 6).join(', ')}${newLayoutCodes.length > 6 ? '…' : ''}`}
+              description="Mẫu căn chưa có trong thư viện hình mẫu — tạo sẵn và gắn cho từng căn, thêm ảnh sau trong mục Hình mẫu căn."
+            />
+          )}
           {project.inventory.length > 0 && (
             <Toggle
               checked={replace}
@@ -690,8 +765,10 @@ export function InventoryItemModal({ project, code, open, onClose }: { project: 
   const { toast, confirm } = useUI();
   const existing = useMemo(() => (code ? indexByCode(project.inventory, (x) => x.code).get(code) : undefined), [project.inventory, code]);
   const [draft, setDraft] = useState<InventoryItem>(() => existing ?? { code, status: 'dang_ban', note: '', updatedAt: '' });
+  const [layoutId, setLayoutId] = useState(() => (code ? (indexByCode(project.layoutAssignments, (a) => a.code).get(code)?.layoutId ?? '') : ''));
   const [saving, setSaving] = useState(false);
   const set = (patch: Partial<InventoryItem>) => setDraft((d) => ({ ...d, ...patch }));
+  const positionLayout = project.layouts.find((l) => l.id === positionOf(project.maps, draft.code)?.layoutId);
 
   const save = async () => {
     const next: InventoryItem = { ...draft, code: draft.code.trim(), note: draft.note.trim(), updatedAt: new Date().toISOString() };
@@ -703,7 +780,13 @@ export function InventoryItemModal({ project, code, open, onClose }: { project: 
         const original = existing ? index.get(existing.code) : undefined;
         const clash = index.get(next.code);
         if (clash && clash !== original) throw new Error(`Mã ${next.code} đã có trong bảng hàng.`);
-        return { inventory: original ? cur.inventory.map((x) => (x === original ? next : x)) : [...cur.inventory, next] };
+        // Hình mẫu riêng của căn (đổi mã căn thì chuyển theo); trùng hình mẫu theo ô thì khỏi gắn riêng.
+        const own = layoutId && layoutId !== positionOf(cur.maps, next.code)?.layoutId ? layoutId : undefined;
+        const renamed = existing && normCode(existing.code) !== normCode(next.code) ? [{ code: existing.code }] : [];
+        return {
+          inventory: original ? cur.inventory.map((x) => (x === original ? next : x)) : [...cur.inventory, next],
+          layoutAssignments: setAssignments(cur.layoutAssignments, [...renamed, { code: next.code, layoutId: own }]),
+        };
       });
       toast(`Đã lưu căn ${next.code}`);
       onClose();
@@ -768,6 +851,18 @@ export function InventoryItemModal({ project, code, open, onClose }: { project: 
           <Field label="Hướng">
             <EnumSelect<Direction> value={draft.direction} onChange={(direction) => set({ direction })} labels={DIRECTION_LABEL} placeholder="— Chưa rõ —" />
           </Field>
+          {project.layouts.length > 0 && (
+            <Field label="Hình mẫu" hint="Căn góc, căn giữa… — khách chạm vào căn thấy đúng hình mẫu này.">
+              <Select value={layoutId} onChange={(e) => setLayoutId(e.target.value)} aria-label="Hình mẫu">
+                <option value="">{positionLayout ? `Theo ô trên mặt bằng (${positionLayout.code})` : '— Chưa gắn —'}</option>
+                {project.layouts.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {`${l.code}${l.tags.length ? ` · ${l.tags.join(', ')}` : ''}`}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
         </div>
         <Field label="Trạng thái">
           <div className="flex flex-wrap gap-1.5">

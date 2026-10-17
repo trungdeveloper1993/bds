@@ -1,5 +1,18 @@
 import { DIRECTION_LABEL, INVENTORY_STATUS, INVENTORY_STATUSES } from '../constants';
-import type { Direction, InventoryItem, InventoryStatus, MapColorBy, MapUnit, Project, ProjectMap, Property, PropertyStatus, UnitTypeRow } from '../types';
+import type {
+  Direction,
+  InventoryItem,
+  InventoryStatus,
+  LayoutAssignment,
+  MapColorBy,
+  MapUnit,
+  Project,
+  ProjectMap,
+  Property,
+  PropertyStatus,
+  UnitLayout,
+  UnitTypeRow,
+} from '../types';
 import { formatMoney } from './format';
 import { mainArea } from './match';
 import { bedroomsIn, foldText, parseAreaText, parsePriceText, parseQuery } from './smartfind';
@@ -7,14 +20,19 @@ import { bedroomsIn, foldText, parseAreaText, parsePriceText, parseQuery } from 
 /*
  * Bản đồ tương tác của dự án: ảnh mặt bằng + các ô (căn / lô) khoanh trên ảnh.
  * Dữ liệu từng căn tra theo MÃ CĂN trong bảng hàng của dự án (giá, diện tích, trạng thái),
- * hoặc căn cùng mã trong Giỏ hàng; hình mẫu lấy theo loại căn.
+ * hoặc căn cùng mã trong Giỏ hàng. Hình mẫu: gắn riêng căn → theo ô trên mặt bằng → hình mẫu chung của loại căn.
  */
 
 // ---------------------------------------------------------------- Ảnh của dự án
 
-/** Mọi ảnh dự án đang dùng: bộ ảnh, nền bản đồ, hình mẫu loại căn (để dọn rác / xoá cho đúng). */
+/** Mọi ảnh dự án đang dùng: bộ ảnh, nền bản đồ, hình mẫu (để dọn rác / xoá cho đúng). */
 export function projectImageIds(p: Project): string[] {
-  return [...p.images, ...p.maps.map((m) => m.imageId), ...p.unitTypes.map((t) => t.imageId).filter((x): x is string => !!x)];
+  return [
+    ...p.images,
+    ...p.maps.map((m) => m.imageId),
+    ...p.unitTypes.map((t) => t.imageId).filter((x): x is string => !!x),
+    ...p.layouts.flatMap((l) => l.images),
+  ];
 }
 
 // ---------------------------------------------------------------- Tầng & mã căn
@@ -95,6 +113,12 @@ export interface ResolvedUnit {
   bedrooms?: number;
   bathrooms?: number;
   direction?: Direction;
+  /** Hình mẫu trong thư viện hình mẫu của dự án. */
+  layout?: UnitLayout;
+  /** Hình mẫu gắn riêng căn này ('code') hay theo ô trên mặt bằng ('position'). */
+  layoutFrom?: 'code' | 'position';
+  /** Ảnh xem được: ảnh hình mẫu, không có thì hình mẫu chung của loại căn / ảnh căn trong Giỏ hàng. */
+  images: string[];
   imageId?: string;
   note: string;
 }
@@ -103,6 +127,11 @@ export interface MapContext {
   inventory: CodeIndex<InventoryItem>;
   properties: CodeIndex<Property>;
   types: Map<string, UnitTypeRow>;
+  layouts: Map<string, UnitLayout>;
+  /** Hình mẫu gắn riêng theo mã căn. */
+  assigned: CodeIndex<LayoutAssignment>;
+  /** Ô trên bản đồ của một mã căn (căn mở từ bảng hàng vẫn lấy được hình mẫu theo ô). */
+  position(code: string): MapUnit | undefined;
   project: Project;
 }
 
@@ -112,6 +141,9 @@ export function mapContext(project: Project, properties: Property[]): MapContext
     inventory: indexByCode(project.inventory, (x) => x.code),
     properties: indexByCode(own, (x) => x.unitCode),
     types: new Map(project.unitTypes.map((t) => [t.id, t])),
+    layouts: new Map(project.layouts.map((l) => [l.id, l])),
+    assigned: indexByCode(project.layoutAssignments, (a) => a.code),
+    position: (code) => mapIndex(project.maps).get(code)?.unit,
     project,
   };
 }
@@ -126,9 +158,19 @@ function typeForBedrooms(project: Project, bedrooms?: number): UnitTypeRow | und
 export function resolveCode(ctx: MapContext, code: string, unit: MapUnit, floor?: number): ResolvedUnit {
   const item = ctx.inventory.get(code);
   const property = ctx.properties.get(code);
-  const type = (item?.typeId ? ctx.types.get(item.typeId) : undefined) ?? typeForBedrooms(ctx.project, property?.bedrooms);
+  const own = ctx.assigned.get(code);
+  const ownLayout = own ? ctx.layouts.get(own.layoutId) : undefined;
+  // Ô thật trên bản đồ thì dùng luôn; dòng bảng hàng thì tìm ô cùng mã.
+  const position = unit.points.length ? unit : ctx.position(code);
+  const positionLayout = position?.layoutId ? ctx.layouts.get(position.layoutId) : undefined;
+  const layout = ownLayout ?? positionLayout;
+  const type =
+    (item?.typeId ? ctx.types.get(item.typeId) : undefined) ??
+    (layout?.typeId ? ctx.types.get(layout.typeId) : undefined) ??
+    typeForBedrooms(ctx.project, property?.bedrooms ?? layout?.bedrooms);
   const price = item?.price ?? (property?.transaction === 'ban' ? property.price : undefined);
-  const area = item?.area ?? (property ? mainArea(property) : undefined);
+  const area = item?.area ?? (property ? mainArea(property) : undefined) ?? layout?.area;
+  const images = layout?.images.length ? layout.images : type?.imageId ? [type.imageId] : (property?.images ?? []);
   return {
     unit,
     code,
@@ -141,10 +183,13 @@ export function resolveCode(ctx: MapContext, code: string, unit: MapUnit, floor?
     priceText: price ? undefined : type?.price.trim() || undefined,
     area,
     areaText: area ? undefined : type?.area.trim() || undefined,
-    bedrooms: property?.bedrooms ?? (type ? bedroomsIn(`${type.name} ${type.note}`) : undefined),
-    bathrooms: property?.bathrooms,
+    bedrooms: property?.bedrooms ?? layout?.bedrooms ?? (type ? bedroomsIn(`${type.name} ${type.note}`) : undefined),
+    bathrooms: property?.bathrooms ?? layout?.bathrooms,
     direction: item?.direction ?? property?.direction,
-    imageId: type?.imageId ?? property?.images[0],
+    layout,
+    layoutFrom: ownLayout ? 'code' : positionLayout ? 'position' : undefined,
+    images,
+    imageId: images[0],
     note: item?.note ?? '',
   };
 }
@@ -164,19 +209,67 @@ export interface UnitLocation {
   unitId: string;
 }
 
-/** Tra mã căn → ô trên bản đồ nào, tầng nào (để nhảy từ bảng hàng / Hỏi nhanh tới đúng căn). */
-export function buildLocator(maps: ProjectMap[]): CodeIndex<UnitLocation> {
-  const entries: Array<{ code: string; loc: UnitLocation }> = [];
+interface MapEntry {
+  code: string;
+  map: ProjectMap;
+  unit: MapUnit;
+  floor?: number;
+}
+
+// Danh sách bản đồ chỉ đổi khi sửa bản đồ: giữ bảng tra theo mảng maps để khỏi dựng lại mỗi lần cập nhật bảng hàng.
+const mapIndexCache = new WeakMap<ProjectMap[], CodeIndex<MapEntry>>();
+
+/** Mọi mã căn trên các bản đồ (mặt bằng tầng điển hình: mỗi ô × mỗi tầng). */
+export function mapEntries(maps: ProjectMap[]): MapEntry[] {
+  const entries: MapEntry[] = [];
   for (const m of maps) {
     const floors = floorList(m);
     for (const u of m.units) {
       if (!u.label.trim()) continue;
-      if (floors.length) for (const f of floors) entries.push({ code: unitCode(m, u.label, f), loc: { mapId: m.id, floor: f, unitId: u.id } });
-      else entries.push({ code: unitCode(m, u.label), loc: { mapId: m.id, unitId: u.id } });
+      if (floors.length) for (const f of floors) entries.push({ code: unitCode(m, u.label, f), map: m, unit: u, floor: f });
+      else entries.push({ code: unitCode(m, u.label), map: m, unit: u });
     }
   }
-  const index = indexByCode(entries, (e) => e.code);
-  return { get: (code) => index.get(code)?.loc };
+  return entries;
+}
+
+function mapIndex(maps: ProjectMap[]): CodeIndex<MapEntry> {
+  let index = mapIndexCache.get(maps);
+  if (!index) {
+    index = indexByCode(mapEntries(maps), (e) => e.code);
+    mapIndexCache.set(maps, index);
+  }
+  return index;
+}
+
+/** Tra mã căn → ô trên bản đồ nào, tầng nào (để nhảy từ bảng hàng / Hỏi nhanh tới đúng căn). */
+export function buildLocator(maps: ProjectMap[]): CodeIndex<UnitLocation> {
+  const index = mapIndex(maps);
+  return {
+    get: (code) => {
+      const e = index.get(code);
+      return e && { mapId: e.map.id, floor: e.floor, unitId: e.unit.id };
+    },
+  };
+}
+
+/** Ô trên bản đồ của một mã căn (để biết hình mẫu theo ô). */
+export const positionOf = (maps: ProjectMap[], code: string): MapUnit | undefined => mapIndex(maps).get(code)?.unit;
+
+/** Mọi mã căn của dự án: trên bản đồ + căn trong bảng hàng chưa khoanh trên bản đồ (không trùng). */
+export function projectCodes(project: Project): string[] {
+  const index = mapIndex(project.maps);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (code: string) => {
+    const key = normCode(code);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(code);
+  };
+  for (const e of mapEntries(project.maps)) add(e.code);
+  for (const x of project.inventory) if (!index.get(x.code)) add(x.code);
+  return out;
 }
 
 /** So sánh mã căn tự nhiên: "A-2" trước "A-10". */
@@ -185,6 +278,7 @@ export const compareCodes = new Intl.Collator('vi', { numeric: true, sensitivity
 // ---------------------------------------------------------------- Màu
 
 export const TYPE_PALETTE = ['#2563eb', '#16a34a', '#f59e0b', '#db2777', '#7c3aed', '#0891b2', '#ea580c', '#65a30d'];
+export const LAYOUT_PALETTE = [...TYPE_PALETTE, '#dc2626', '#0d9488', '#9333ea', '#ca8a04', '#4f46e5', '#be185d'];
 export const PRICE_PALETTE = ['#bfdbfe', '#60a5fa', '#2563eb', '#1e40af', '#172554'];
 export const DIRECTION_COLORS: Record<Direction, string> = {
   dong: '#f59e0b',
@@ -221,8 +315,22 @@ function priceThresholds(values: number[]): number[] {
   return [...new Set(out)];
 }
 
-export function makeColoring(units: ResolvedUnit[], colorBy: MapColorBy, statusColors: Record<InventoryStatus, string>, types: UnitTypeRow[]): Coloring {
+export function makeColoring(
+  units: ResolvedUnit[],
+  colorBy: MapColorBy,
+  statusColors: Record<InventoryStatus, string>,
+  types: UnitTypeRow[],
+  layouts: UnitLayout[] = [],
+): Coloring {
   const count = (pred: (r: ResolvedUnit) => boolean) => units.filter(pred).length;
+  if (colorBy === 'layout') {
+    const color = new Map(layouts.map((l, i) => [l.id, LAYOUT_PALETTE[i % LAYOUT_PALETTE.length]]));
+    return {
+      colorOf: (r) => (r.layout ? (color.get(r.layout.id) ?? null) : null),
+      keyOf: (r) => r.layout?.id ?? null,
+      legend: layouts.map((l) => ({ key: l.id, label: l.code, color: color.get(l.id)!, count: count((r) => r.layout?.id === l.id) })).filter((e) => e.count > 0),
+    };
+  }
   if (colorBy === 'type') {
     const color = new Map(types.map((t, i) => [t.id, TYPE_PALETTE[i % TYPE_PALETTE.length]]));
     return {
@@ -444,6 +552,42 @@ const STATUS_WORDS: Array<[RegExp, InventoryStatus]> = [
   [/\b(chua mo|chua mo ban)\b/, 'chua_mo'],
 ];
 
+/** Chữ thường không dấu, chỉ chữ & số, có khoảng trắng hai đầu — để so khớp nguyên từ. */
+const words = (s: string) => ` ${foldText(s).replace(/[^a-z0-9+]+/g, ' ').trim()} `;
+
+/** Hình mẫu nhắc tới trong câu lọc: gõ đúng mã ("3PN-GOC"), hoặc mã / thẻ nằm trong câu ("2pn căn góc"). */
+export function layoutHits(text: string, project: Project): { layouts: UnitLayout[]; exact: boolean; phrases: string[] } {
+  const code = normCode(text.trim());
+  const exact = code ? project.layouts.filter((l) => normCode(l.code) === code) : [];
+  if (exact.length) return { layouts: exact, exact: true, phrases: [] };
+  const sentence = words(text);
+  // Thẻ "2PN", "Đông Nam", "Đã bán"… đã được hiểu thành điều kiện riêng — không lọc thêm theo hình mẫu.
+  const understood = (phrase: string) => {
+    const e = parseQuery(phrase).entities;
+    return (
+      e.bedrooms !== undefined ||
+      !!e.directions ||
+      !!e.price ||
+      !!e.area ||
+      STATUS_WORDS.some(([re]) => re.test(phrase)) ||
+      project.unitTypes.some((t) => words(t.name).trim() === phrase)
+    );
+  };
+  const phrases = new Set<string>();
+  const layouts = project.layouts.filter((l) => {
+    let hit = false;
+    for (const s of [l.code, ...l.tags]) {
+      const w = words(s).trim();
+      if (w.length >= 3 && sentence.includes(` ${w} `) && !understood(w)) {
+        phrases.add(w);
+        hit = true;
+      }
+    }
+    return hit;
+  });
+  return { layouts, exact: false, phrases: [...phrases] };
+}
+
 export function parseUnitFilter(text: string, project: Project): UnitFilter | null {
   const raw = text.trim();
   if (!raw) return null;
@@ -456,14 +600,23 @@ export function parseUnitFilter(text: string, project: Project): UnitFilter | nu
     const name = foldText(t.name).trim();
     return name.length >= 3 && folded.includes(name);
   });
+  const layouts = layoutHits(raw, project);
   const sq = squashCode(raw);
-  const looksLikeCode = /\d/.test(raw) && !e.price && !e.area && e.bedrooms === undefined && !floorMatch && raw.replace(/[\s.\-_/]/g, '').length <= 10;
+  const looksLikeCode =
+    !layouts.exact && /\d/.test(raw) && !e.price && !e.area && e.bedrooms === undefined && !floorMatch && raw.replace(/[\s.\-_/]/g, '').length <= 10;
   return {
     text: raw,
     floor: floorMatch ? Number(floorMatch[1]) : undefined,
     statuses: statuses.length ? statuses : undefined,
     test(r) {
+      // Gõ đúng mã hình mẫu: chỉ lọc theo hình mẫu (mã "2PN-A" không có nghĩa là lọc thêm theo số phòng ngủ).
+      if (layouts.exact) return !!r.layout && layouts.layouts.includes(r.layout);
       if (looksLikeCode) return squashCode(r.code).includes(sq);
+      if (layouts.layouts.length) {
+        // "căn góc": căn có hình mẫu gắn thẻ đó, hoặc ghi chú trong bảng hàng có chữ đó.
+        const note = words(r.note);
+        if (!(r.layout && layouts.layouts.includes(r.layout)) && !layouts.phrases.some((p) => note.includes(` ${p} `))) return false;
+      }
       if (e.bedrooms !== undefined && r.bedrooms !== e.bedrooms) return false;
       if (e.price) {
         const range = r.price ? [r.price, r.price] : r.priceText ? parsePriceText(r.priceText) : undefined;
@@ -494,7 +647,8 @@ export function filterIsActive(f: UnitFilter | null, project: Project): boolean 
     !!e.directions ||
     !!f.statuses ||
     /\d/.test(f.text) ||
-    project.unitTypes.some((t) => foldText(t.name).trim().length >= 3 && folded.includes(foldText(t.name).trim()))
+    project.unitTypes.some((t) => foldText(t.name).trim().length >= 3 && folded.includes(foldText(t.name).trim())) ||
+    layoutHits(f.text, project).layouts.length > 0
   );
 }
 
@@ -505,16 +659,24 @@ export interface UnitMatcher {
   structured: boolean;
 }
 
-/** Ô lọc gõ tự do: hiểu điều kiện ("2pn dưới 4 tỷ còn hàng"), không thì tìm theo chữ trong mã, loại căn, ghi chú. */
+/** Ô lọc gõ tự do: hiểu điều kiện ("2pn dưới 4 tỷ còn hàng"), không thì tìm theo chữ trong mã, loại căn, hình mẫu, ghi chú. */
 export function unitMatcher(text: string, project: Project): UnitMatcher | null {
   const f = parseUnitFilter(text, project);
   if (!f) return null;
   if (filterIsActive(f, project)) return { test: f.test, floor: f.floor, structured: true };
   const plain = foldText(text).trim();
-  return { test: (r) => foldText(`${r.code} ${r.type?.name ?? ''} ${r.note}`).includes(plain), structured: false };
+  return {
+    test: (r) => foldText(`${r.code} ${r.type?.name ?? ''} ${r.note} ${r.layout ? `${r.layout.code} ${r.layout.name} ${r.layout.tags.join(' ')}` : ''}`).includes(plain),
+    structured: false,
+  };
 }
 
 // ---------------------------------------------------------------- Văn bản gửi khách
+
+/** "3PN-GOC · Căn góc, 2 mặt thoáng" — mã hình mẫu kèm thẻ. */
+export function layoutText(l: UnitLayout): string {
+  return [l.code, l.name.trim(), l.tags.join(', ')].filter(Boolean).join(' · ');
+}
 
 export function unitSummary(r: ResolvedUnit, projectName: string, options: { hidePrice: boolean }): string {
   const parts = [
@@ -525,5 +687,6 @@ export function unitSummary(r: ResolvedUnit, projectName: string, options: { hid
   ].filter(Boolean);
   const price = options.hidePrice ? 'giá liên hệ' : r.price ? `giá ${formatMoney(r.price, '')}` : r.priceText ? `giá ${r.priceText}` : '';
   const status = r.status ? INVENTORY_STATUS[r.status].label.toLowerCase() : '';
-  return [`Căn ${r.code} – ${projectName}`, parts.join(', '), price, status, r.note].filter(Boolean).join(' · ');
+  const layout = r.layout ? `mẫu ${layoutText(r.layout)}` : '';
+  return [`Căn ${r.code} – ${projectName}`, parts.join(', '), layout, price, status, r.note].filter(Boolean).join(' · ');
 }

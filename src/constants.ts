@@ -250,6 +250,21 @@ export const MILESTONE_STATUS: Record<MilestoneStatus, LabelTone> = {
 };
 export const MILESTONE_SUGGESTIONS = ['Khởi công', 'Hoàn thiện móng', 'Cất nóc', 'Bàn giao', 'Cấp sổ hồng'];
 
+/** Thẻ hay dùng cho hình mẫu căn. */
+export const LAYOUT_TAG_SUGGESTIONS = [
+  'Căn góc',
+  'Căn giữa',
+  '2 mặt thoáng',
+  'Đảo chiều',
+  'View sông',
+  'View hồ bơi',
+  'View công viên',
+  'Có sân vườn',
+  'Duplex',
+  'Penthouse',
+  'Studio',
+];
+
 export const MAP_CARD_FIELDS: Array<{ key: keyof MapCardFields; label: string }> = [
   { key: 'image', label: 'Hình mẫu căn' },
   { key: 'area', label: 'Diện tích' },

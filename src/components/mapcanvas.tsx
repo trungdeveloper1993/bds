@@ -288,6 +288,18 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
     my: 0,
   });
   const lastTap = useRef({ t: 0, x: 0, y: 0 });
+  // Chạm (xử lý ở pointerup) có thể mở thẻ căn ngay dưới ngón tay: chặn cú "click" trình duyệt bắn ra sau đó,
+  // kẻo nó bấm nhầm vào nút / ảnh trên thẻ vừa hiện.
+  const tappedAt = useRef(0);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const onTouchEnd = (e: TouchEvent) => {
+      if (Date.now() - tappedAt.current < 400) e.preventDefault();
+    };
+    el.addEventListener('touchend', onTouchEnd, { passive: false });
+    return () => el.removeEventListener('touchend', onTouchEnd);
+  }, []);
 
   const local = (e: ReactPointerEvent) => {
     const rect = wrapRef.current!.getBoundingClientRect();
@@ -364,6 +376,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
     } else if (g.mode === 'press' && !cancelled) {
       const p = local(e);
       const now = Date.now();
+      if (e.pointerType === 'touch') tappedAt.current = now;
       const target = document.elementFromPoint(e.clientX, e.clientY);
       const isDouble = now - lastTap.current.t < 300 && Math.hypot(p.x - lastTap.current.x, p.y - lastTap.current.y) < 24;
       if (tapZoom && isDouble && !target?.closest('[data-unit]')) {

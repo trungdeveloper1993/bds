@@ -39,7 +39,7 @@ import { isImageFile, saveImage } from '../lib/media';
 import { navigate } from '../lib/router';
 import { useData } from '../store/data';
 import { useUI } from '../store/ui';
-import type { FaqItem, LegalItem, LegalItemStatus, Project, Property, UnitTypeRow } from '../types';
+import type { FaqItem, LegalItem, LegalItemStatus, Project, Property, UnitLayout, UnitTypeRow } from '../types';
 import { DocActions } from './documents';
 import { ImageView, Lightbox } from './media';
 import { Badge, Button, Card, CardHeader, cn, EmptyState, Field, IconButton, Modal, Select, TextArea, TextInput, Toggle } from './ui';
@@ -351,10 +351,18 @@ export function LegalReferenceCard() {
 
 // ---------------------------------------------------------------- Bảng loại sản phẩm
 
-export function UnitTypesTable({ rows }: { rows: UnitTypeRow[] }) {
-  const [layout, setLayout] = useState<string | null>(null);
+/** Ảnh hình mẫu của một loại căn: hình mẫu chung + các mẫu trong thư viện thuộc loại này (căn góc, căn giữa…). */
+function typeLayouts(t: UnitTypeRow, layouts: UnitLayout[]): Array<{ id: string; label: string }> {
+  return [
+    ...(t.imageId ? [{ id: t.imageId, label: t.name }] : []),
+    ...layouts.filter((l) => l.typeId === t.id && l.images[0]).map((l) => ({ id: l.images[0], label: l.code })),
+  ];
+}
+
+export function UnitTypesTable({ rows, layouts = [] }: { rows: UnitTypeRow[]; layouts?: UnitLayout[] }) {
+  const [view, setView] = useState<{ images: string[]; index: number } | null>(null);
   if (!rows.length) return null;
-  const images = rows.some((r) => r.imageId);
+  const images = rows.some((r) => typeLayouts(r, layouts).length);
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[520px] text-left text-sm">
@@ -369,27 +377,39 @@ export function UnitTypesTable({ rows }: { rows: UnitTypeRow[] }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {rows.map((r) => (
-            <tr key={r.id} id={`ut-${r.id}`}>
-              <td className="px-4 py-2.5 font-semibold text-slate-900 sm:px-5">{r.name}</td>
-              {images && (
-                <td className="px-3 py-1.5">
-                  {r.imageId && (
-                    <button type="button" onClick={() => setLayout(r.imageId!)} className="block overflow-hidden rounded-lg ring-1 ring-slate-200 hover:opacity-90" aria-label={`Xem hình mẫu ${r.name}`}>
-                      <ImageView id={r.imageId} className="h-11 w-16" />
-                    </button>
-                  )}
-                </td>
-              )}
-              <td className="px-3 py-2.5 text-slate-700">{r.area}</td>
-              <td className="px-3 py-2.5 font-semibold text-brand-800">{r.price}</td>
-              <td className="px-3 py-2.5 text-slate-700">{r.quantity}</td>
-              <td className="px-3 py-2.5 text-slate-500">{r.note}</td>
-            </tr>
-          ))}
+          {rows.map((r) => {
+            const pics = typeLayouts(r, layouts);
+            return (
+              <tr key={r.id} id={`ut-${r.id}`}>
+                <td className="px-4 py-2.5 font-semibold text-slate-900 sm:px-5">{r.name}</td>
+                {images && (
+                  <td className="px-3 py-1.5">
+                    <div className="flex flex-wrap gap-1.5">
+                      {pics.map((pic, i) => (
+                        <button
+                          key={pic.id}
+                          type="button"
+                          onClick={() => setView({ images: pics.map((x) => x.id), index: i })}
+                          className="block overflow-hidden rounded-lg ring-1 ring-slate-200 hover:opacity-90"
+                          aria-label={`Xem hình mẫu ${pic.label}`}
+                          title={pic.label}
+                        >
+                          <ImageView id={pic.id} className="h-11 w-16" />
+                        </button>
+                      ))}
+                    </div>
+                  </td>
+                )}
+                <td className="px-3 py-2.5 text-slate-700">{r.area}</td>
+                <td className="px-3 py-2.5 font-semibold text-brand-800">{r.price}</td>
+                <td className="px-3 py-2.5 text-slate-700">{r.quantity}</td>
+                <td className="px-3 py-2.5 text-slate-500">{r.note}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
-      {layout && <Lightbox images={[layout]} index={0} onIndex={() => undefined} onClose={() => setLayout(null)} />}
+      {view && <Lightbox images={view.images} index={view.index} onIndex={(index) => setView({ ...view, index })} onClose={() => setView(null)} />}
     </div>
   );
 }
@@ -471,7 +491,7 @@ export function UnitTypesEditor({ rows, onChange }: { rows: UnitTypeRow[]; onCha
               >
                 {r.imageId ? 'Đổi hình mẫu' : 'Thêm hình mẫu'}
               </Button>
-              <p className="mt-1 text-xs text-slate-500">Layout căn — hiện khi khách chạm vào căn loại này trên bản đồ.</p>
+              <p className="mt-1 text-xs text-slate-500">Hình mẫu chung của loại này — dùng cho căn chưa gắn hình mẫu riêng (căn góc, căn giữa… ở mục Hình mẫu căn, tab Mặt bằng).</p>
             </div>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">

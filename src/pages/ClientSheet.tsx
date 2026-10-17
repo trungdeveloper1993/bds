@@ -332,7 +332,7 @@ function ProjectSheet({ project: p, showDescription }: { project: Project; showD
 
       {p.unitTypes.length > 0 && (
         <div className="mt-4 break-inside-avoid overflow-hidden rounded-xl border border-slate-200">
-          <UnitTypesTable rows={p.unitTypes} />
+          <UnitTypesTable rows={p.unitTypes} layouts={p.layouts} />
         </div>
       )}
 

@@ -62,8 +62,38 @@ export interface UnitTypeRow {
   price: string;
   quantity: string;
   note: string;
-  /** Hình mẫu (layout) dùng chung cho các căn thuộc loại này. */
+  /** Hình mẫu chung cho các căn thuộc loại này — dùng khi căn chưa gắn hình mẫu riêng (UnitLayout). */
   imageId?: string;
+}
+
+/**
+ * Một hình mẫu căn trong thư viện hình mẫu của dự án (VD "3PN-GOC": căn góc 3PN).
+ * Gắn cho từng căn theo mã căn, hoặc cho một ô trên mặt bằng (áp dụng mọi tầng).
+ */
+export interface UnitLayout {
+  id: string;
+  /** Mã hình mẫu — duy nhất trong dự án, dùng để gắn cho căn (VD "3PN-GOC", "A1"). */
+  code: string;
+  /** Tên hiển thị cho khách, VD "Căn góc 3PN – 2 mặt thoáng". */
+  name: string;
+  /** Thẻ mô tả để tìm / lọc: "Căn góc", "Căn giữa", "View sông"… */
+  tags: string[];
+  /** Ảnh: ảnh đầu là hình mẫu chính; các ảnh sau: phối cảnh 3D, nội thất… */
+  images: string[];
+  /** Loại căn (UnitTypeRow.id) — giá tham khảo, số phòng ngủ. */
+  typeId?: string;
+  /** Diện tích của mẫu (m²) — dùng khi bảng hàng chưa có diện tích căn. */
+  area?: number;
+  bedrooms?: number;
+  bathrooms?: number;
+  /** Hiện cả khi khách xem. */
+  note: string;
+}
+
+/** Hình mẫu gắn riêng cho một căn (theo mã căn) — ưu tiên hơn hình mẫu theo ô trên mặt bằng. */
+export interface LayoutAssignment {
+  code: string;
+  layoutId: string;
 }
 
 /** Trạng thái một căn trong bảng hàng của dự án (theo CĐT / đại lý F1). */
@@ -90,6 +120,8 @@ export interface MapUnit {
   points: number[];
   /** Số căn trên mặt bằng tầng ("05") hoặc mã đầy đủ ("L-12"). */
   label: string;
+  /** Hình mẫu của vị trí này (UnitLayout.id) — mặt bằng tầng điển hình: áp dụng cho ô này ở mọi tầng. */
+  layoutId?: string;
 }
 
 /** Mã căn của mặt bằng tầng điển hình = tiền tố + tầng + dấu nối + số căn (vd "A-12-05"). */
@@ -100,7 +132,7 @@ export interface CodeRule {
   padFloor: boolean;
 }
 
-export type MapColorBy = 'status' | 'type' | 'price' | 'direction';
+export type MapColorBy = 'status' | 'type' | 'layout' | 'price' | 'direction';
 
 /** Bản đồ tương tác của dự án: mặt bằng tầng, sơ đồ phân lô, phối cảnh 3D… */
 export interface ProjectMap {
@@ -286,6 +318,10 @@ export interface Project {
   maps: ProjectMap[];
   /** Bảng hàng: toàn bộ căn của dự án theo mã căn (giá, diện tích, trạng thái). */
   inventory: InventoryItem[];
+  /** Thư viện hình mẫu căn (mỗi mẫu một mã: căn góc, căn giữa…). */
+  layouts: UnitLayout[];
+  /** Hình mẫu gắn riêng từng căn theo mã căn (ngoài hình mẫu theo ô trên mặt bằng). */
+  layoutAssignments: LayoutAssignment[];
   /** Phương thức & tiến độ thanh toán, ưu đãi, mốc tiến độ dự án. */
   sales: SalesTerms;
 
