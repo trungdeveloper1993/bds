@@ -448,6 +448,9 @@ export function Modal({
 }) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  // Trang phía sau vẽ lại (onClose là hàm mới) không được làm con trỏ nhảy về ô đầu tiên.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -455,12 +458,13 @@ export function Modal({
     const { overflow } = document.body.style;
     document.body.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && dismissible) onClose();
+      if (e.key === 'Escape' && dismissible) closeRef.current();
     };
     window.addEventListener('keydown', onKey);
-    // Đưa con trỏ vào ô nhập đầu tiên (hoặc chính hộp thoại).
+    // Đưa con trỏ vào ô nhập đầu tiên (hoặc chính hộp thoại) — trừ khi người dùng đã bấm vào ô khác.
     const timer = window.setTimeout(() => {
       const panel = panelRef.current;
+      if (panel?.contains(document.activeElement)) return;
       const target = panel?.querySelector<HTMLElement>('[data-autofocus], input:not([type=hidden]), textarea, select');
       (target ?? panel)?.focus();
     }, 30);
@@ -470,7 +474,7 @@ export function Modal({
       document.body.style.overflow = overflow;
       previous?.focus?.();
     };
-  }, [open, onClose, dismissible]);
+  }, [open, dismissible]);
 
   if (!open) return null;
 
