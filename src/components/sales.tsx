@@ -7,6 +7,7 @@ import {
   CircleCheck,
   CircleDot,
   Copy,
+  FileDown,
   Gift,
   HardHat,
   Lock,
@@ -41,6 +42,7 @@ import { useData } from '../store/data';
 import { useUI } from '../store/ui';
 import type { Installment, Milestone, MilestoneStatus, PaymentMethod, Project, Promotion, PromotionKind, Property, SalesTerms } from '../types';
 import { MoneyInput, NumberInput } from './inputs';
+import { UnitShareModal } from './sheetshare';
 import { Badge, Button, Card, CardHeader, Checkbox, cn, EmptyState, Field, IconButton, Modal, Segmented, TextArea, TextInput, Toggle } from './ui';
 
 /*
@@ -504,6 +506,7 @@ function QuoteCard({ project, units, editable, privacy, initialCode }: { project
   const [methodId, setMethodId] = useState(() => sales.methods[0]?.id ?? '');
   const [picked, setPicked] = useState<string[]>(() => promos.filter((p) => p.auto && promotionActive(p)).map((p) => p.id));
   const [focused, setFocused] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   const codes = useMemo(
     () => [...new Set([...project.inventory.map((x) => x.code), ...units.filter((u) => u.projectId === project.id && u.unitCode.trim()).map((u) => u.unitCode.trim())])].sort(compareCodes),
@@ -678,8 +681,11 @@ function QuoteCard({ project, units, editable, privacy, initialCode }: { project
               </p>
             )}
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="primary" icon={Copy} onClick={() => void copy()}>
-                Copy gửi khách
+              <Button size="sm" variant="primary" icon={FileDown} onClick={() => setSharing(true)}>
+                Gửi khách (PDF / ảnh)
+              </Button>
+              <Button size="sm" icon={Copy} onClick={() => void copy()}>
+                Copy chữ
               </Button>
               {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
                 <Button size="sm" icon={Share2} onClick={share}>
@@ -692,6 +698,15 @@ function QuoteCard({ project, units, editable, privacy, initialCode }: { project
           <p className="rounded-xl bg-slate-50 px-3 py-2.5 text-[13px] text-slate-500">
             {sales.methods.length || promos.length ? 'Chọn căn trong bảng hàng hoặc nhập giá để tính.' : 'Thêm phương thức thanh toán và ưu đãi để tính dòng tiền cho khách.'}
           </p>
+        )}
+
+        {sharing && (
+          <UnitShareModal
+            project={project}
+            code={found ? unit!.code : ''}
+            initial={{ methodId: method?.id, promoIds: picked, price: listPrice }}
+            onClose={() => setSharing(false)}
+          />
         )}
 
         {editable && (

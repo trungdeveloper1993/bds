@@ -13,6 +13,7 @@ import {
   Pencil,
   Plus,
   Settings2,
+  Share2,
   Sparkles,
   Trash2,
   X,
@@ -48,6 +49,7 @@ import { useUI } from '../store/ui';
 import type { CodeRule, InventoryStatus, MapColorBy, Project, ProjectMap, Property, Settings } from '../types';
 import { InventoryItemModal, InventoryPanel } from './inventory';
 import { ColorDot, MapCanvas, stopMapGesture, svgPoints, UnitLabel, VW, type MapCanvasHandle } from './mapcanvas';
+import { UnitShareModal } from './sheetshare';
 import { DropZone, ImageView, Lightbox } from './media';
 import { Button, Card, Checkbox, cn, Dropdown, EmptyState, Field, IconButton, Modal, SearchInput, Segmented, Select, TextInput, Toggle } from './ui';
 
@@ -274,6 +276,7 @@ function MapViewer({
   const [fullscreen, setFullscreen] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
   const [editCode, setEditCode] = useState<string | null>(null);
+  const [shareCode, setShareCode] = useState<string | null>(null);
 
   const hidePrice = privacy && settings.mapHidePrice;
   const colorMode: MapColorBy = hidePrice && colorBy === 'price' ? 'status' : colorBy;
@@ -459,6 +462,7 @@ function MapViewer({
       hidePrice={hidePrice}
       onClose={() => setSelectedId(null)}
       onEdit={() => setEditCode(selected.code)}
+      onShare={() => setShareCode(selected.code)}
       onShowOnMap={
         mode === 'grid'
           ? () => {
@@ -664,6 +668,7 @@ function MapViewer({
         )}
 
       {editCode !== null && <InventoryItemModal project={project} code={editCode} open onClose={() => setEditCode(null)} />}
+      {shareCode !== null && <UnitShareModal project={project} code={shareCode} onClose={() => setShareCode(null)} />}
       {editable && (
         <Modal open={displayOpen} onClose={() => setDisplayOpen(false)} title="Màu & thẻ chi tiết" description="Áp dụng cho mọi bản đồ. Có thể chỉnh lại trong Cài đặt." footer={<Button onClick={() => setDisplayOpen(false)}>Xong</Button>}>
           <MapDisplaySettings />
@@ -926,6 +931,7 @@ function UnitDetails({
   hidePrice,
   onClose,
   onEdit,
+  onShare,
   onShowOnMap,
 }: {
   r: ResolvedUnit;
@@ -936,6 +942,7 @@ function UnitDetails({
   hidePrice: boolean;
   onClose: () => void;
   onEdit: () => void;
+  onShare?: () => void;
   onShowOnMap?: () => void;
 }) {
   const { patchProject } = useData();
@@ -1032,9 +1039,14 @@ function UnitDetails({
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
+        {r.code && onShare && (
+          <Button size="sm" variant="primary" icon={Share2} onClick={onShare}>
+            Gửi khách (PDF / ảnh)
+          </Button>
+        )}
         {r.code && (
           <Button size="sm" icon={Copy} onClick={() => void copy()}>
-            Copy gửi khách
+            Copy chữ
           </Button>
         )}
         {r.code && !hidePrice && (r.price || r.item) && (
