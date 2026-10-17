@@ -8,6 +8,7 @@ import {
   Clock,
   Eye,
   Files,
+  ImagePlus,
   Images,
   House,
   Info,
@@ -17,9 +18,10 @@ import {
   Scale,
   Trash2,
   TriangleAlert,
+  X,
   type LucideIcon,
 } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import {
   ACTIVE_PROPERTY_STATUSES,
   LEGAL_CHECKLIST,
@@ -33,12 +35,13 @@ import { useFocusRequest } from '../lib/focus';
 import { uid } from '../lib/id';
 import { legalProgress, resolveChecklist } from '../lib/legal';
 import { formatPriceRange, formatProjectAddress } from '../lib/listing';
+import { isImageFile, saveImage } from '../lib/media';
 import { navigate } from '../lib/router';
 import { useData } from '../store/data';
 import { useUI } from '../store/ui';
 import type { FaqItem, LegalItem, LegalItemStatus, Project, Property, UnitTypeRow } from '../types';
 import { DocActions } from './documents';
-import { ImageView } from './media';
+import { ImageView, Lightbox } from './media';
 import { Badge, Button, Card, CardHeader, cn, EmptyState, Field, IconButton, Modal, Select, TextArea, TextInput, Toggle } from './ui';
 
 export function ProjectStageBadge({ project, size = 'md' }: { project: Pick<Project, 'stage'>; size?: 'sm' | 'md' }) {
@@ -349,13 +352,16 @@ export function LegalReferenceCard() {
 // ---------------------------------------------------------------- Bảng loại sản phẩm
 
 export function UnitTypesTable({ rows }: { rows: UnitTypeRow[] }) {
+  const [layout, setLayout] = useState<string | null>(null);
   if (!rows.length) return null;
+  const images = rows.some((r) => r.imageId);
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[520px] text-left text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-2.5 font-semibold sm:px-5">Loại sản phẩm</th>
+            {images && <th className="px-3 py-2.5 font-semibold">Hình mẫu</th>}
             <th className="px-3 py-2.5 font-semibold">Diện tích</th>
             <th className="px-3 py-2.5 font-semibold">Giá</th>
             <th className="px-3 py-2.5 font-semibold">Số lượng</th>
@@ -366,6 +372,15 @@ export function UnitTypesTable({ rows }: { rows: UnitTypeRow[] }) {
           {rows.map((r) => (
             <tr key={r.id} id={`ut-${r.id}`}>
               <td className="px-4 py-2.5 font-semibold text-slate-900 sm:px-5">{r.name}</td>
+              {images && (
+                <td className="px-3 py-1.5">
+                  {r.imageId && (
+                    <button type="button" onClick={() => setLayout(r.imageId!)} className="block overflow-hidden rounded-lg ring-1 ring-slate-200 hover:opacity-90" aria-label={`Xem hình mẫu ${r.name}`}>
+                      <ImageView id={r.imageId} className="h-11 w-16" />
+                    </button>
+                  )}
+                </td>
+              )}
               <td className="px-3 py-2.5 text-slate-700">{r.area}</td>
               <td className="px-3 py-2.5 font-semibold text-brand-800">{r.price}</td>
               <td className="px-3 py-2.5 text-slate-700">{r.quantity}</td>
@@ -374,19 +389,90 @@ export function UnitTypesTable({ rows }: { rows: UnitTypeRow[] }) {
           ))}
         </tbody>
       </table>
+      {layout && <Lightbox images={[layout]} index={0} onIndex={() => undefined} onClose={() => setLayout(null)} />}
     </div>
   );
 }
 
 export function UnitTypesEditor({ rows, onChange }: { rows: UnitTypeRow[]; onChange: (rows: UnitTypeRow[]) => void }) {
+  const { toast } = useUI();
   const set = (id: string, patch: Partial<UnitTypeRow>) => onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  // Tải ảnh xong mới gán: dùng danh sách mới nhất (người dùng có thể vừa gõ thêm trong lúc chờ).
+  const latest = useRef(rows);
+  latest.current = rows;
+  const fileRef = useRef<HTMLInputElement>(null);
+  const target = useRef<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const onFile = async (file: File | undefined) => {
+    const id = target.current;
+    if (!file || !id) return;
+    if (!isImageFile(file)) {
+      toast('Hãy chọn file ảnh (JPG, PNG…)', 'error');
+      return;
+    }
+    setBusy(id);
+    try {
+      const imageId = await saveImage(file);
+      onChange(latest.current.map((r) => (r.id === id ? { ...r, imageId } : r)));
+    } catch (e) {
+      toast(`Không lưu được ảnh: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div className="space-y-3">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          void onFile(file);
+        }}
+      />
       {rows.map((r, i) => (
         <div key={r.id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Loại #{i + 1}</span>
             <IconButton icon={Trash2} label="Xoá dòng" size="sm" tone="danger" onClick={() => onChange(rows.filter((x) => x.id !== r.id))} />
+          </div>
+          <div className="mb-3 flex items-center gap-3">
+            {r.imageId ? (
+              <div className="relative">
+                <ImageView id={r.imageId} className="h-16 w-24 rounded-lg ring-1 ring-slate-200" />
+                <button
+                  type="button"
+                  aria-label="Bỏ hình mẫu"
+                  onClick={() => set(r.id, { imageId: undefined })}
+                  className="absolute -right-2 -top-2 flex size-6 items-center justify-center rounded-full bg-white text-slate-500 shadow ring-1 ring-slate-200 hover:text-rose-600"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            ) : (
+              <span className="flex h-16 w-24 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 text-slate-300">
+                <ImagePlus size={20} />
+              </span>
+            )}
+            <div className="min-w-0">
+              <Button
+                size="sm"
+                icon={ImagePlus}
+                loading={busy === r.id}
+                onClick={() => {
+                  target.current = r.id;
+                  fileRef.current?.click();
+                }}
+              >
+                {r.imageId ? 'Đổi hình mẫu' : 'Thêm hình mẫu'}
+              </Button>
+              <p className="mt-1 text-xs text-slate-500">Layout căn — hiện khi khách chạm vào căn loại này trên bản đồ.</p>
+            </div>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <TextInput value={r.name} onChange={(e) => set(r.id, { name: e.target.value })} placeholder="Tên: 2PN+1, Shophouse…" aria-label="Tên loại sản phẩm" />

@@ -10,6 +10,8 @@ import type {
   Frontage,
   Furnishing,
   InteractionKind,
+  InventoryStatus,
+  MapCardFields,
   InterestStatus,
   LegalStatus,
   Payment,
@@ -223,6 +225,28 @@ export const LEGAL_CHECKLIST: Array<{ key: string; label: string; hint: string; 
     hint: 'Trên hệ thống thông tin quốc gia về nhà ở & thị trường BĐS và website CĐT (Điều 6 Luật KDBĐS 2023).',
     scope: 'all',
   },
+];
+
+/** Trạng thái căn trong bảng hàng — màu mặc định theo quy ước bảng hàng (xanh còn, vàng giữ chỗ, đỏ đã bán). */
+export const INVENTORY_STATUS: Record<InventoryStatus, LabelTone & { color: string }> = {
+  dang_ban: { label: 'Đang bán', tone: 'emerald', color: '#16a34a' },
+  giu_cho: { label: 'Đang giữ chỗ', tone: 'amber', color: '#f59e0b' },
+  da_coc: { label: 'Đã cọc', tone: 'orange', color: '#ea580c' },
+  da_ban: { label: 'Đã bán', tone: 'rose', color: '#dc2626' },
+  chua_mo: { label: 'Chưa mở bán', tone: 'slate', color: '#94a3b8' },
+};
+export const INVENTORY_STATUSES: InventoryStatus[] = ['dang_ban', 'giu_cho', 'da_coc', 'da_ban', 'chua_mo'];
+
+export const DEFAULT_MAP_COLORS = Object.fromEntries(INVENTORY_STATUSES.map((s) => [s, INVENTORY_STATUS[s].color])) as Record<InventoryStatus, string>;
+
+export const MAP_CARD_FIELDS: Array<{ key: keyof MapCardFields; label: string }> = [
+  { key: 'image', label: 'Hình mẫu căn' },
+  { key: 'area', label: 'Diện tích' },
+  { key: 'price', label: 'Giá' },
+  { key: 'unitPrice', label: 'Giá / m²' },
+  { key: 'rooms', label: 'Phòng ngủ' },
+  { key: 'direction', label: 'Hướng' },
+  { key: 'note', label: 'Ghi chú (view, căn góc…)' },
 ];
 
 export const VISIBILITY: Record<Visibility, LabelTone> = {

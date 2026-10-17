@@ -62,6 +62,62 @@ export interface UnitTypeRow {
   price: string;
   quantity: string;
   note: string;
+  /** Hình mẫu (layout) dùng chung cho các căn thuộc loại này. */
+  imageId?: string;
+}
+
+/** Trạng thái một căn trong bảng hàng của dự án (theo CĐT / đại lý F1). */
+export type InventoryStatus = 'dang_ban' | 'giu_cho' | 'da_coc' | 'da_ban' | 'chua_mo';
+
+/** Một căn / lô trong bảng hàng của dự án — tra theo mã căn. */
+export interface InventoryItem {
+  /** Mã căn, vd "A-12-05", "L-12". */
+  code: string;
+  /** Loại căn (UnitTypeRow.id) — lấy hình mẫu, số phòng ngủ. */
+  typeId?: string;
+  area?: number;
+  price?: number;
+  status: InventoryStatus;
+  direction?: Direction;
+  /** View, căn góc, ghi chú… (hiện cả khi khách xem). */
+  note: string;
+  updatedAt: string;
+}
+
+/** Một ô (căn / lô) khoanh trên bản đồ. Toạ độ theo tỉ lệ 0–1 của ảnh: [x1, y1, x2, y2, …]. */
+export interface MapUnit {
+  id: string;
+  points: number[];
+  /** Số căn trên mặt bằng tầng ("05") hoặc mã đầy đủ ("L-12"). */
+  label: string;
+}
+
+/** Mã căn của mặt bằng tầng điển hình = tiền tố + tầng + dấu nối + số căn (vd "A-12-05"). */
+export interface CodeRule {
+  prefix: string;
+  sep: string;
+  /** Tầng luôn 2 chữ số: 05 thay vì 5. */
+  padFloor: boolean;
+}
+
+export type MapColorBy = 'status' | 'type' | 'price' | 'direction';
+
+/** Bản đồ tương tác của dự án: mặt bằng tầng, sơ đồ phân lô, phối cảnh 3D… */
+export interface ProjectMap {
+  id: string;
+  name: string;
+  /** Ảnh nền (kho ảnh). */
+  imageId: string;
+  /** Tỉ lệ rộng / cao của ảnh — giữ đúng vị trí các ô khi thay ảnh mới. */
+  aspect: number;
+  /** Mặt bằng tầng điển hình dùng chung cho nhiều tầng (chung cư). */
+  floors?: { from: number; to: number; skip: number[] };
+  codeRule: CodeRule;
+  colorBy: MapColorBy;
+  showLabels: boolean;
+  units: MapUnit[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface FaqItem {
@@ -158,6 +214,10 @@ export interface Project {
 
   images: string[];
   documents: DocumentRef[];
+  /** Bản đồ tương tác (mặt bằng, sơ đồ phân lô). */
+  maps: ProjectMap[];
+  /** Bảng hàng: toàn bộ căn của dự án theo mã căn (giá, diện tích, trạng thái). */
+  inventory: InventoryItem[];
 
   // Nội bộ
   /** Danh bạ đầu mối (admin CĐT/F1, ngân hàng). */
@@ -388,4 +448,20 @@ export interface Settings {
   /** Mã PIN để thoát "Chế độ khách xem" ('' = không cần PIN). */
   privacyPin: string;
   lastBackupAt: string;
+  /** Màu từng trạng thái trên bản đồ mặt bằng (mã màu #rrggbb). */
+  mapColors: Record<InventoryStatus, string>;
+  /** Thông tin hiện trên thẻ chi tiết khi chạm vào một căn trên bản đồ. */
+  mapCard: MapCardFields;
+  /** Ẩn giá trên bản đồ (hiện "Liên hệ"). */
+  mapHidePrice: boolean;
+}
+
+export interface MapCardFields {
+  image: boolean;
+  area: boolean;
+  price: boolean;
+  unitPrice: boolean;
+  rooms: boolean;
+  direction: boolean;
+  note: boolean;
 }

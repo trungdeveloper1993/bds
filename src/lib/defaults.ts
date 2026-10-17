@@ -2,12 +2,14 @@ import {
   BROKER_CONTRACT_LABEL,
   CUSTOMER_SOURCE_LABEL,
   CUSTOMER_STATUS,
+  DEFAULT_MAP_COLORS,
   DIRECTION_LABEL,
   DOC_CATEGORY_LABEL,
   FRONTAGE_LABEL,
   FURNISHING_LABEL,
   INTERACTION_KIND_LABEL,
   INTEREST_STATUS,
+  INVENTORY_STATUS,
   LEGAL_LABEL,
   LEGAL_STATUS,
   PAYMENT_LABEL,
@@ -26,8 +28,12 @@ import type {
   FaqItem,
   Interaction,
   Interest,
+  InventoryItem,
   LegalItem,
+  MapCardFields,
+  MapUnit,
   Project,
+  ProjectMap,
   Property,
   SellerInfo,
   Settings,
@@ -134,6 +140,8 @@ export function emptyProject(defaults: Partial<Project> = {}): Project {
     faqs: [],
     images: [],
     documents: [],
+    maps: [],
+    inventory: [],
     contacts: '',
     commission: '',
     infoSource: '',
@@ -188,8 +196,13 @@ export function defaultSettings(): Settings {
     defaultProvince: '',
     privacyPin: '',
     lastBackupAt: '',
+    mapColors: { ...DEFAULT_MAP_COLORS },
+    mapCard: { ...DEFAULT_MAP_CARD },
+    mapHidePrice: false,
   };
 }
+
+const DEFAULT_MAP_CARD: MapCardFields = { image: true, area: true, price: true, unitPrice: true, rooms: true, direction: true, note: true };
 
 type Loose<T> = Partial<Record<keyof T, unknown>>;
 
@@ -325,6 +338,61 @@ function normalizeUnitType(raw: unknown): UnitTypeRow | null {
     price: str(r.price),
     quantity: str(r.quantity),
     note: str(r.note),
+    imageId: typeof r.imageId === 'string' && r.imageId ? r.imageId : undefined,
+  };
+}
+
+const num01 = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= -0.5 && v <= 1.5;
+
+function normalizeMapUnit(raw: unknown): MapUnit | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Loose<MapUnit>;
+  const points = arr<unknown>(r.points);
+  if (points.length < 6 || points.length % 2 !== 0 || !points.every(num01)) return null;
+  return { id: typeof r.id === 'string' && r.id ? r.id : uid(), points: points as number[], label: str(r.label) };
+}
+
+function normalizeMap(raw: unknown): ProjectMap | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Loose<ProjectMap>;
+  if (typeof r.id !== 'string' || !r.id || typeof r.imageId !== 'string' || !r.imageId) return null;
+  const f = (r.floors && typeof r.floors === 'object' ? r.floors : null) as Loose<NonNullable<ProjectMap['floors']>> | null;
+  const from = num(f?.from);
+  const to = num(f?.to);
+  const rule = (r.codeRule && typeof r.codeRule === 'object' ? r.codeRule : {}) as Loose<ProjectMap['codeRule']>;
+  const now = new Date().toISOString();
+  return {
+    id: r.id,
+    name: str(r.name, 'Mặt bằng'),
+    imageId: r.imageId,
+    aspect: num(r.aspect) && (r.aspect as number) > 0 ? (r.aspect as number) : 1.5,
+    floors:
+      from !== undefined && to !== undefined && to >= from
+        ? { from: Math.round(from), to: Math.round(to), skip: arr<unknown>(f?.skip).filter((x): x is number => typeof x === 'number') }
+        : undefined,
+    codeRule: { prefix: str(rule.prefix), sep: str(rule.sep, '-'), padFloor: rule.padFloor !== false },
+    colorBy: r.colorBy === 'type' || r.colorBy === 'price' || r.colorBy === 'direction' ? r.colorBy : 'status',
+    showLabels: r.showLabels !== false,
+    units: listOfObjects(r.units, normalizeMapUnit),
+    createdAt: str(r.createdAt, now),
+    updatedAt: str(r.updatedAt, now),
+  };
+}
+
+function normalizeInventory(raw: unknown): InventoryItem | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Loose<InventoryItem>;
+  const code = str(r.code).trim();
+  if (!code) return null;
+  return {
+    code,
+    typeId: typeof r.typeId === 'string' && r.typeId ? r.typeId : undefined,
+    area: num(r.area),
+    price: num(r.price),
+    status: oneOf(INVENTORY_STATUS, r.status, 'dang_ban'),
+    direction: oneOf(DIRECTION_LABEL, r.direction),
+    note: str(r.note),
+    updatedAt: str(r.updatedAt, new Date().toISOString()),
   };
 }
 
@@ -403,6 +471,8 @@ export function normalizeProject(raw: unknown): Project | null {
     faqs: listOfObjects(r.faqs, normalizeFaq),
     images: strings(r.images),
     documents: documents(r.documents, 'public'),
+    maps: listOfObjects(r.maps, normalizeMap),
+    inventory: listOfObjects(r.inventory, normalizeInventory),
     contacts: str(r.contacts),
     commission: str(r.commission),
     infoSource: str(r.infoSource),
@@ -498,5 +568,18 @@ export function normalizeSettings(raw: unknown): Settings {
     defaultProvince: str(r.defaultProvince),
     privacyPin: str(r.privacyPin),
     lastBackupAt: str(r.lastBackupAt),
+    mapColors: Object.fromEntries(
+      Object.entries(base.mapColors).map(([k, v]) => {
+        const c = (r.mapColors as Record<string, unknown> | undefined)?.[k];
+        return [k, typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c) ? c : v];
+      }),
+    ) as Settings['mapColors'],
+    mapCard: Object.fromEntries(
+      Object.entries(base.mapCard).map(([k, v]) => {
+        const c = (r.mapCard as Record<string, unknown> | undefined)?.[k];
+        return [k, typeof c === 'boolean' ? c : v];
+      }),
+    ) as unknown as MapCardFields,
+    mapHidePrice: r.mapHidePrice === true,
   };
 }

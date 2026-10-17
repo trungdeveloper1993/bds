@@ -30,7 +30,7 @@ import { mainArea } from './match';
 
 // ======================================================================= Kiểu dữ liệu
 
-export type ProjectTab = 'tong-quan' | 'phap-ly' | 'tai-lieu' | 'hinh-anh' | 'gio-hang' | 'khach' | 'noi-bo';
+export type ProjectTab = 'tong-quan' | 'mat-bang' | 'phap-ly' | 'tai-lieu' | 'hinh-anh' | 'gio-hang' | 'khach' | 'noi-bo';
 
 export type Topic =
   | 'gia'
@@ -1081,7 +1081,7 @@ export function parseAreaText(text: string): [number, number] | undefined {
   return [Math.min(...nums), Math.max(...nums)];
 }
 
-function bedroomsIn(text: string): number | undefined {
+export function bedroomsIn(text: string): number | undefined {
   const toks = tokenize(text);
   for (let i = 0; i < toks.length; i++) {
     if (toks[i + 1]?.fold === 'phong' && toks[i + 2]?.fold === 'ngu') {

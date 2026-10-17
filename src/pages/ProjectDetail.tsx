@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { DocActions, DocumentManager, FileTypeIcon } from '../components/documents';
+import { MapsTab } from '../components/maps';
 import { DropZone, Gallery, ImageManager, ImageView, Lightbox, useImageUpload } from '../components/media';
 import { FaqList, LegalChecklist, LegalReferenceCard, legalProgress, ProjectStageBadge, PublicFaqCard, UnitTypesTable } from '../components/project';
 import { PropertyRow } from '../components/property';
@@ -130,6 +131,7 @@ export function ProjectDetail({ id }: { id: string }) {
 
   const tabs: Array<{ value: TabKey; label: string; count?: number; hidden?: boolean }> = [
     { value: 'tong-quan', label: 'Tổng quan' },
+    { value: 'mat-bang', label: 'Mặt bằng', count: p.maps.length },
     { value: 'phap-ly', label: 'Pháp lý', count: legal.done },
     { value: 'tai-lieu', label: 'Tài liệu', count: visibleDocs.filter((d) => !d.archived).length },
     { value: 'hinh-anh', label: 'Hình ảnh', count: p.images.length },
@@ -221,6 +223,8 @@ export function ProjectDetail({ id }: { id: string }) {
       {tab === 'tong-quan' && (
         <OverviewTab project={p} editable={editable} privacy={privacy} onAddImages={() => setTab('hinh-anh')} />
       )}
+
+      {tab === 'mat-bang' && <MapsTab project={p} units={units} editable={editable} privacy={privacy} />}
 
       {tab === 'phap-ly' && (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
