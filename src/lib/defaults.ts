@@ -30,6 +30,7 @@ import type {
   Interaction,
   Interest,
   InventoryItem,
+  LayoutAssignment,
   LegalItem,
   MapCardFields,
   MapUnit,
@@ -44,6 +45,7 @@ import type {
   SalesTerms,
   SellerInfo,
   Settings,
+  UnitLayout,
   UnitTypeRow,
 } from '../types';
 import { uid } from './id';
@@ -149,6 +151,8 @@ export function emptyProject(defaults: Partial<Project> = {}): Project {
     documents: [],
     maps: [],
     inventory: [],
+    layouts: [],
+    layoutAssignments: [],
     sales: emptySales(),
     contacts: '',
     commission: '',
@@ -357,7 +361,46 @@ function normalizeMapUnit(raw: unknown): MapUnit | null {
   const r = raw as Loose<MapUnit>;
   const points = arr<unknown>(r.points);
   if (points.length < 6 || points.length % 2 !== 0 || !points.every(num01)) return null;
-  return { id: typeof r.id === 'string' && r.id ? r.id : uid(), points: points as number[], label: str(r.label) };
+  return {
+    id: typeof r.id === 'string' && r.id ? r.id : uid(),
+    points: points as number[],
+    label: str(r.label),
+    layoutId: typeof r.layoutId === 'string' && r.layoutId ? r.layoutId : undefined,
+  };
+}
+
+const positive = (v: unknown) => {
+  const n = num(v);
+  return n !== undefined && n > 0 ? n : undefined;
+};
+
+function normalizeLayout(raw: unknown): UnitLayout | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Loose<UnitLayout>;
+  const code = str(r.code).trim();
+  if (!code) return null;
+  return {
+    id: typeof r.id === 'string' && r.id ? r.id : uid(),
+    code,
+    name: str(r.name),
+    tags: strings(r.tags)
+      .map((t) => t.trim())
+      .filter(Boolean),
+    images: strings(r.images),
+    typeId: typeof r.typeId === 'string' && r.typeId ? r.typeId : undefined,
+    area: positive(r.area),
+    bedrooms: positive(r.bedrooms),
+    bathrooms: positive(r.bathrooms),
+    note: str(r.note),
+  };
+}
+
+function normalizeLayoutAssignment(raw: unknown): LayoutAssignment | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Loose<LayoutAssignment>;
+  const code = str(r.code).trim();
+  if (!code || typeof r.layoutId !== 'string' || !r.layoutId) return null;
+  return { code, layoutId: r.layoutId };
 }
 
 function normalizeMap(raw: unknown): ProjectMap | null {
@@ -379,7 +422,7 @@ function normalizeMap(raw: unknown): ProjectMap | null {
         ? { from: Math.round(from), to: Math.round(to), skip: arr<unknown>(f?.skip).filter((x): x is number => typeof x === 'number') }
         : undefined,
     codeRule: { prefix: str(rule.prefix), sep: str(rule.sep, '-'), padFloor: rule.padFloor !== false },
-    colorBy: r.colorBy === 'type' || r.colorBy === 'price' || r.colorBy === 'direction' ? r.colorBy : 'status',
+    colorBy: r.colorBy === 'type' || r.colorBy === 'layout' || r.colorBy === 'price' || r.colorBy === 'direction' ? r.colorBy : 'status',
     showLabels: r.showLabels !== false,
     units: listOfObjects(r.units, normalizeMapUnit),
     createdAt: str(r.createdAt, now),
@@ -496,6 +539,9 @@ export function normalizeProject(raw: unknown): Project | null {
   const r = raw as Loose<Project>;
   if (typeof r.id !== 'string' || !r.id) return null;
   const base = emptyProject();
+  const layouts = listOfObjects(r.layouts, normalizeLayout);
+  const layoutIds = new Set(layouts.map((l) => l.id));
+  const known = (id?: string) => (id && layoutIds.has(id) ? id : undefined);
   return {
     id: r.id,
     code: str(r.code),
@@ -549,8 +595,10 @@ export function normalizeProject(raw: unknown): Project | null {
     faqs: listOfObjects(r.faqs, normalizeFaq),
     images: strings(r.images),
     documents: documents(r.documents, 'public'),
-    maps: listOfObjects(r.maps, normalizeMap),
+    maps: listOfObjects(r.maps, normalizeMap).map((m) => ({ ...m, units: m.units.map((u) => ({ ...u, layoutId: known(u.layoutId) })) })),
     inventory: listOfObjects(r.inventory, normalizeInventory),
+    layouts,
+    layoutAssignments: listOfObjects(r.layoutAssignments, normalizeLayoutAssignment).filter((a) => known(a.layoutId)),
     sales: normalizeSales(r.sales),
     contacts: str(r.contacts),
     commission: str(r.commission),

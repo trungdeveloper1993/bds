@@ -25,13 +25,16 @@ import { requestFocus } from '../lib/focus';
 import { formatArea, formatMoney, formatNumber, formatUnitPrice } from '../lib/format';
 import { uid } from '../lib/id';
 import { upsertItem } from '../lib/inventory';
+import { setAssignments, withPositionLayout } from '../lib/layouts';
 import { copyText } from '../lib/listing';
 import {
   buildLocator,
   compareCodes,
   floorList,
+  indexByCode,
   makeColoring,
   mapContext,
+  normCode,
   resolveUnits,
   unitCode,
   unitMatcher,
@@ -41,13 +44,14 @@ import {
   type ResolvedUnit,
   type UnitLocation,
 } from '../lib/maps';
-import { deleteImages, isImageFile, saveImage, saveImageSized } from '../lib/media';
+import { deleteImages, isImageFile, saveImageSized } from '../lib/media';
 import { navigate, useLocation } from '../lib/router';
 import { createSampleProject, SAMPLE_PROJECT_ID } from '../lib/sample';
 import { useData } from '../store/data';
 import { useUI } from '../store/ui';
 import type { CodeRule, InventoryStatus, MapColorBy, Project, ProjectMap, Property, Settings } from '../types';
 import { InventoryItemModal, InventoryPanel } from './inventory';
+import { LayoutLibrary, LayoutPickerModal } from './layouts';
 import { ColorDot, MapCanvas, stopMapGesture, svgPoints, UnitLabel, VW, type MapCanvasHandle } from './mapcanvas';
 import { UnitShareModal } from './sheetshare';
 import { DropZone, ImageView, Lightbox } from './media';
@@ -77,6 +81,7 @@ export function useMedia(query: string): boolean {
 const COLOR_BY: Array<{ value: MapColorBy; label: string }> = [
   { value: 'status', label: 'Trạng thái' },
   { value: 'type', label: 'Loại căn' },
+  { value: 'layout', label: 'Hình mẫu' },
   { value: 'price', label: 'Mức giá' },
   { value: 'direction', label: 'Hướng' },
 ];
@@ -152,6 +157,7 @@ export function MapsTab({ project, units, editable, privacy }: { project: Projec
       ) : (
         <NoMapsCard project={project} editable={editable} onCreate={() => setCreateOpen(true)} />
       )}
+      <LayoutLibrary project={project} editable={editable} />
       <InventoryPanel project={project} ctx={ctx} locator={locator} editable={editable} privacy={privacy} hidePrice={hidePrice} onLocate={(code) => go({ bd: map?.id, can: code })} />
       {editable && <MapCreateModal project={project} open={createOpen} onClose={() => setCreateOpen(false)} />}
     </div>
@@ -279,7 +285,7 @@ function MapViewer({
   const [shareCode, setShareCode] = useState<string | null>(null);
 
   const hidePrice = privacy && settings.mapHidePrice;
-  const colorMode: MapColorBy = hidePrice && colorBy === 'price' ? 'status' : colorBy;
+  const colorMode: MapColorBy = (hidePrice && colorBy === 'price') || (colorBy === 'layout' && !project.layouts.length) ? 'status' : colorBy;
   const VH = VW / map.aspect;
 
   const byFloor = useMemo(() => {
@@ -290,7 +296,10 @@ function MapViewer({
   }, [ctx, map, floors]);
   const all = useMemo(() => [...byFloor.values()].flat(), [byFloor]);
   const resolved = byFloor.get(floor) ?? [];
-  const coloring = useMemo(() => makeColoring(all, colorMode, settings.mapColors, project.unitTypes), [all, colorMode, settings.mapColors, project.unitTypes]);
+  const coloring = useMemo(
+    () => makeColoring(all, colorMode, settings.mapColors, project.unitTypes, project.layouts),
+    [all, colorMode, settings.mapColors, project.unitTypes, project.layouts],
+  );
 
   // Lọc: hiểu "2pn dưới 4 tỷ hướng đông nam còn hàng"; không hiểu điều kiện nào thì tìm theo chữ (mã, loại, ghi chú).
   const matcher = useMemo(() => unitMatcher(filterText, project), [filterText, project]);
@@ -618,6 +627,7 @@ function MapViewer({
               active={legendKey}
               onToggle={(key) => setLegendKey((k) => (k === key ? null : key))}
               scope={floors.length ? (mode === 'grid' ? 'cả toà' : `tầng ${floor}`) : ''}
+              noneLabel={colorMode === 'layout' ? 'Chưa gắn hình mẫu' : 'Chưa có thông tin'}
               colorBy={
                 <label className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
                   <Palette size={14} />
@@ -631,7 +641,7 @@ function MapViewer({
                     }}
                     className="rounded-lg border border-slate-300 bg-white py-1 pl-2 pr-7 text-xs font-semibold text-slate-800 focus:border-brand-500 focus:outline-none"
                   >
-                    {COLOR_BY.filter((o) => !(hidePrice && o.value === 'price')).map((o) => (
+                    {COLOR_BY.filter((o) => !(hidePrice && o.value === 'price') && !(o.value === 'layout' && !project.layouts.length)).map((o) => (
                       <option key={o.value} value={o.value}>
                         {o.label}
                       </option>
@@ -750,6 +760,7 @@ function Legend({
   active,
   onToggle,
   scope,
+  noneLabel,
   colorBy,
 }: {
   coloring: Coloring;
@@ -757,6 +768,7 @@ function Legend({
   active: string | null;
   onToggle: (key: string) => void;
   scope: string;
+  noneLabel: string;
   colorBy: ReactNode;
 }) {
   const entries = coloring.legend.filter((e) => (counts.get(e.key) ?? 0) > 0);
@@ -781,7 +793,7 @@ function Legend({
     <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 px-3 py-2.5 sm:px-4">
       {colorBy}
       {entries.map((e) => chip(e.key, e.label, counts.get(e.key) ?? 0, <ColorDot color={e.color} />))}
-      {none > 0 && chip(NO_DATA, 'Chưa có thông tin', none, <span className="inline-block size-2.5 shrink-0 rounded-full border border-dashed border-slate-500" />)}
+      {none > 0 && chip(NO_DATA, noneLabel, none, <span className="inline-block size-2.5 shrink-0 rounded-full border border-dashed border-slate-500" />)}
       {(entries.length > 0 || none > 0) && <span className="ml-auto hidden text-[11px] text-slate-400 sm:inline">{scope ? `Đếm ${scope} · ` : ''}chạm để lọc</span>}
     </div>
   );
@@ -947,9 +959,10 @@ function UnitDetails({
 }) {
   const { patchProject } = useData();
   const { toast } = useUI();
-  const [lightbox, setLightbox] = useState(false);
-  const upload = useLayoutUpload(project);
+  const [lightbox, setLightbox] = useState<number | null>(null);
+  const [picker, setPicker] = useState(false);
   const card = settings.mapCard;
+  const showImage = card.image && !!r.imageId;
   const color = r.status ? settings.mapColors[r.status] : '#94a3b8';
   const hasData = !!(r.item || r.property);
   const price = priceLabel(r, hidePrice);
@@ -991,22 +1004,69 @@ function UnitDetails({
         <IconButton icon={X} label="Đóng" size="sm" onClick={onClose} className="-mr-1.5 -mt-1" />
       </div>
 
-      {card.image && r.imageId && (
-        <button type="button" onClick={() => setLightbox(true)} className="mt-3 block w-full overflow-hidden rounded-xl ring-1 ring-slate-200" aria-label="Xem hình mẫu toàn màn hình">
-          <ImageView id={r.imageId} variant="full" fit="contain" eager className="aspect-[4/3] w-full bg-slate-50" />
-        </button>
+      {showImage && (
+        <div className="mt-3">
+          <button type="button" onClick={() => setLightbox(0)} className="relative block w-full overflow-hidden rounded-xl ring-1 ring-slate-200" aria-label="Xem hình mẫu toàn màn hình">
+            <ImageView id={r.imageId} variant="full" fit="contain" eager className="aspect-[4/3] w-full bg-slate-50" />
+            {r.layout && (
+              <span className="absolute left-2 top-2 rounded-lg bg-white/95 px-2 py-0.5 font-mono text-xs font-bold text-slate-900 shadow-sm ring-1 ring-slate-200">
+                Mẫu {r.layout.code}
+              </span>
+            )}
+          </button>
+          {r.images.length > 1 && (
+            <div className="no-scrollbar mt-1.5 flex gap-1.5 overflow-x-auto">
+              {r.images.slice(1, 6).map((id, i) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setLightbox(i + 1)}
+                  className="shrink-0 overflow-hidden rounded-lg ring-1 ring-slate-200 hover:opacity-90"
+                  aria-label={`Xem ảnh ${i + 2} của hình mẫu`}
+                >
+                  <ImageView id={id} className="h-12 w-16" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       )}
-      {card.image && !r.imageId && editable && r.type && (
+      {card.image && !r.imageId && editable && r.code && (
         <button
           type="button"
-          onClick={() => upload.pick(r.type!.id)}
-          disabled={upload.busy}
+          onClick={() => setPicker(true)}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 py-5 text-sm font-semibold text-slate-600 transition hover:border-brand-400 hover:text-brand-700"
         >
-          <ImagePlus size={18} /> {upload.busy ? 'Đang lưu…' : `Thêm hình mẫu cho loại “${r.type.name || 'chưa đặt tên'}”`}
+          <ImagePlus size={18} /> {r.layout ? `Mẫu ${r.layout.code} chưa có ảnh — đổi hình mẫu` : 'Gắn hình mẫu cho căn này'}
         </button>
       )}
-      {upload.input}
+      {(r.layout || (editable && r.code && showImage)) && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+          {r.layout ? (
+            <>
+              {!showImage && <span className="font-mono font-bold text-slate-900">Mẫu {r.layout.code}</span>}
+              {r.layout.name && <span className="font-semibold text-slate-700">{r.layout.name}</span>}
+              {r.layout.tags.map((t) => (
+                <span key={t} className="rounded-md bg-violet-50 px-1.5 py-0.5 font-semibold text-violet-700">
+                  {t}
+                </span>
+              ))}
+              {editable && (
+                <span className="text-slate-400">
+                  {r.layoutFrom === 'code' ? 'gắn riêng căn này' : map.floors ? `theo ô ${r.unit.label} (mọi tầng)` : 'theo ô trên mặt bằng'}
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="text-slate-500">{r.property && !r.type?.imageId ? 'Ảnh căn trong Giỏ hàng' : `Hình mẫu chung${r.type ? ` của loại ${r.type.name}` : ''}`}</span>
+          )}
+          {editable && r.code && (showImage || r.layout) && (
+            <button type="button" onClick={() => setPicker(true)} className="ml-auto font-bold text-brand-700 hover:underline">
+              {r.layout ? 'Đổi hình mẫu' : 'Gắn hình mẫu riêng'}
+            </button>
+          )}
+        </div>
+      )}
 
       {visibleRows.length > 0 && (
         <dl className="mt-3 grid grid-cols-2 gap-2">
@@ -1089,66 +1149,72 @@ function UnitDetails({
         </div>
       )}
 
-      {lightbox && r.imageId && <Lightbox images={[r.imageId]} index={0} onIndex={() => undefined} onClose={() => setLightbox(false)} />}
+      {lightbox !== null && r.images[lightbox] && <Lightbox images={r.images} index={lightbox} onIndex={setLightbox} onClose={() => setLightbox(null)} />}
+      {picker && <UnitLayoutPicker project={project} map={map} r={r} onClose={() => setPicker(false)} />}
     </div>
   );
 }
 
-/** Tải hình mẫu cho một loại căn (lưu ngay vào dự án). */
-function useLayoutUpload(project: Project) {
+/** Gắn hình mẫu cho căn đang chọn: cho ô này ở mọi tầng (mặt bằng tầng điển hình), hoặc riêng căn này. */
+function UnitLayoutPicker({ project, map, r, onClose }: { project: Project; map: ProjectMap; r: ResolvedUnit; onClose: () => void }) {
   const { patchProject } = useData();
   const { toast } = useUI();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const target = useRef<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [replaceOthers, setReplaceOthers] = useState(false);
+  const floors = floorList(map);
+  const label = r.unit.label.trim();
+  const codes = floors.length ? floors.map((f) => unitCode(map, label, f)) : [r.code];
+  const assigned = indexByCode(project.layoutAssignments, (a) => a.code);
+  // Các căn khác cùng ô đang gắn hình mẫu riêng (VD tầng trên cùng): mặc định giữ nguyên.
+  const others = codes.filter((c) => normCode(c) !== normCode(r.code) && assigned.get(c));
+  const positionLayout = project.layouts.find((l) => l.id === r.unit.layoutId);
+  const codeOf = (id?: string) => project.layouts.find((l) => l.id === id)?.code ?? '';
 
-  const onFile = async (file: File | undefined) => {
-    const typeId = target.current;
-    if (!file || !typeId) return;
-    if (!isImageFile(file)) {
-      toast('Hãy chọn file ảnh (JPG, PNG…)', 'error');
+  const apply = async (layoutId: string | undefined, scope: string) => {
+    if (scope === 'code') {
+      // Chọn đúng hình mẫu của ô thì khỏi gắn riêng — căn đi theo ô.
+      const own = layoutId && layoutId !== r.unit.layoutId ? layoutId : undefined;
+      await patchProject(project.id, (cur) => ({ layoutAssignments: setAssignments(cur.layoutAssignments, [{ code: r.code, layoutId: own }]) }));
+      toast(layoutId ? `Căn ${r.code}: hình mẫu ${codeOf(layoutId)}` : `Căn ${r.code} dùng hình mẫu theo ô trên mặt bằng`);
       return;
     }
-    setBusy(true);
-    try {
-      const id = await saveImage(file);
-      let old: string | undefined;
-      await patchProject(project.id, (cur) => ({
-        unitTypes: cur.unitTypes.map((t) => {
-          if (t.id !== typeId) return t;
-          old = t.imageId;
-          return { ...t, imageId: id };
-        }),
-      }));
-      if (old) await deleteImages([old]);
-      toast('Đã thêm hình mẫu');
-    } catch (e) {
-      toast(`Không lưu được ảnh: ${e instanceof Error ? e.message : String(e)}`, 'error');
-    } finally {
-      setBusy(false);
-    }
+    const clear = [r.code, ...(replaceOthers ? others : [])].map((code) => ({ code, layoutId: undefined }));
+    await patchProject(project.id, (cur) => ({
+      maps: withPositionLayout(cur.maps, map.id, [r.unit.id], layoutId),
+      layoutAssignments: setAssignments(cur.layoutAssignments, clear),
+    }));
+    toast(layoutId ? `Ô ${label}: hình mẫu ${codeOf(layoutId)}${floors.length ? ` cho ${codes.length} căn` : ''}` : `Đã bỏ hình mẫu của ô ${label}`);
   };
 
-  return {
-    busy,
-    pick: (typeId: string) => {
-      target.current = typeId;
-      inputRef.current?.click();
-    },
-    input: (
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          e.target.value = '';
-          void onFile(file);
-        }}
-      />
-    ),
-  };
+  return (
+    <LayoutPickerModal
+      project={project}
+      title={r.layout ? `Đổi hình mẫu căn ${r.code}` : `Gắn hình mẫu cho căn ${r.code}`}
+      description="Chọn đúng hình mẫu của căn này (căn góc, căn giữa…), hoặc tải hình mẫu mới ngay tại đây."
+      current={r.layout?.id}
+      scopes={
+        floors.length
+          ? [
+              { value: 'position', label: `Ô ${label} – mọi tầng`, hint: `Áp dụng cho ${codes.length} căn ${codes[codes.length - 1]} … ${codes[0]}.` },
+              { value: 'code', label: `Chỉ căn ${r.code}`, hint: 'Cho căn khác mẫu với các tầng còn lại (VD tầng trên cùng có sân vườn, căn thông tầng).' },
+            ]
+          : undefined
+      }
+      initialScope={r.layoutFrom === 'code' ? 'code' : 'position'}
+      clearLabel={(scope) => (scope === 'code' ? (positionLayout ? `Theo ô trên mặt bằng (${positionLayout.code})` : 'Không gắn riêng') : 'Không gắn hình mẫu')}
+      extra={(scope) =>
+        scope === 'position' &&
+        others.length > 0 && (
+          <Checkbox
+            checked={replaceOthers}
+            onChange={setReplaceOthers}
+            label={`Áp dụng cả cho ${others.length} căn đang gắn hình mẫu riêng (${others.slice(0, 3).join(', ')}${others.length > 3 ? '…' : ''})`}
+          />
+        )
+      }
+      onApply={apply}
+      onClose={onClose}
+    />
+  );
 }
 
 // ---------------------------------------------------------------- Cài đặt hiển thị (dùng chung với trang Cài đặt)

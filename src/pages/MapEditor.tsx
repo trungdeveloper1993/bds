@@ -11,6 +11,7 @@ import {
   CopyPlus,
   Hash,
   ImageUp,
+  LayoutTemplate,
   ListOrdered,
   MousePointer2,
   Pentagon,
@@ -27,8 +28,10 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { LayoutPickerModal } from '../components/layouts';
 import { MapCanvas, svgPoints, UnitLabel, VW, type MapCanvasHandle } from '../components/mapcanvas';
 import { mapSetupDraft, MapSetupFields, parseMapSetup, useMedia, type MapSetupDraft } from '../components/maps';
+import { ImageView } from '../components/media';
 import { Button, Checkbox, cn, Field, IconButton, Modal, Segmented, Select, TextInput, Toggle } from '../components/ui';
 import { uid } from '../lib/id';
 import {
@@ -37,6 +40,8 @@ import {
   clampPoints,
   compareCodes,
   floorList,
+  indexByCode,
+  LAYOUT_PALETTE,
   mapContext,
   nextLabel,
   normCode,
@@ -54,7 +59,7 @@ import { isImageFile, saveImageSized } from '../lib/media';
 import { goBack, releaseNavigationGuard, useUnsavedChangesGuard } from '../lib/router';
 import { useData } from '../store/data';
 import { useUI } from '../store/ui';
-import type { MapColorBy, MapUnit, Project, ProjectMap } from '../types';
+import type { MapColorBy, MapUnit, Project, ProjectMap, UnitLayout } from '../types';
 import { NotFound } from './NotFound';
 
 /*
@@ -146,7 +151,7 @@ function makeCopies(all: MapUnit[], ids: string[], dir: Dir, count: number, gap:
     for (const u of chosen) {
       let label = u.label;
       if (relabel) label = last ? (last = nextLabel(last, step)) : '';
-      out.push({ id: uid(), points: clampPoints(translatePoints(u.points, dx * i, dy * i)), label });
+      out.push({ id: uid(), points: clampPoints(translatePoints(u.points, dx * i, dy * i)), label, layoutId: u.layoutId });
     }
   }
   return out;
@@ -218,6 +223,8 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
   const [panelOpen, setPanelOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [layoutPicker, setLayoutPicker] = useState(false);
+  const [tintLayouts, setTintLayouts] = useState(false);
   const drag = useRef<Drag | null>(null);
   const labelEdit = useRef(false);
 
@@ -275,6 +282,31 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
   }, [labelKey, ruleKey, ctx]);
   const unlabeled = units.filter((u) => !u.label.trim());
   const dupUnits = units.filter((u) => duplicates.has(normCode(u.label)));
+
+  // ---------------------------------------------------------------- Hình mẫu theo ô
+  const layoutColor = useMemo(() => new Map(project.layouts.map((l, i) => [l.id, LAYOUT_PALETTE[i % LAYOUT_PALETTE.length]])), [project.layouts]);
+  // Căn (ở các ô đang chọn) gắn hình mẫu riêng — ưu tiên hơn hình mẫu theo ô.
+  const overrides = useMemo(() => {
+    if (!selected.length || !project.layoutAssignments.length) return 0;
+    const current = draftRef.current;
+    const assigned = indexByCode(project.layoutAssignments, (a) => a.code);
+    const fl = floorList(current);
+    let n = 0;
+    for (const u of current.units) {
+      if (!selSet.has(u.id) || !u.label.trim()) continue;
+      for (const f of fl.length ? fl : [undefined]) if (assigned.get(unitCode(current, u.label, f))) n++;
+    }
+    return n;
+    // labelKey / ruleKey thay cho draft.units (như phần đối chiếu bảng hàng ở trên).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selSet, project.layoutAssignments, labelKey, ruleKey]);
+
+  const assignLayout = (layoutId: string | undefined) => {
+    const ids = new Set(selected);
+    setUnits((list) => list.map((u) => (ids.has(u.id) ? { ...u, layoutId } : u)));
+    const code = project.layouts.find((l) => l.id === layoutId)?.code;
+    toast(code ? `Đã gắn hình mẫu ${code} cho ${ids.size} ô — bấm Lưu để lưu bản đồ` : `Đã bỏ hình mẫu của ${ids.size} ô`);
+  };
 
   // ---------------------------------------------------------------- Hình học trên màn hình
   /** Khoảng cách (px màn hình) của một độ lệch toạ độ 0–1. */
@@ -665,7 +697,7 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
     let label = splitStart;
     return splitUnit(single.points, split.cols, split.rows).map((points, i): MapUnit => {
       if (i) label = nextLabel(label, step);
-      return { id: uid(), points: clampPoints(points), label: split.relabel ? label : '' };
+      return { id: uid(), points: clampPoints(points), label: split.relabel ? label : '', layoutId: single.layoutId };
     });
   }, [panel, single, split, splitStart, step]);
   const applySplit = () => {
@@ -715,6 +747,7 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
           vh={VH}
           state={selSet.has(u.id) ? 'selected' : !u.label.trim() || duplicates.has(normCode(u.label)) ? 'warn' : matched.has(u.id) ? 'matched' : 'plain'}
           dashed={!u.label.trim()}
+          tint={tintLayouts ? ((u.layoutId && layoutColor.get(u.layoutId)) ?? '#94a3b8') : undefined}
         />
       ))}
       {units.map((u) => u.label.trim() && <UnitLabel key={`l-${u.id}`} points={u.points} vh={VH} text={u.label} />)}
@@ -1004,6 +1037,9 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
                   }}
                   onRemove={removeSelected}
                   onClear={() => setSelected([])}
+                  layouts={project.layouts}
+                  overrides={overrides}
+                  onPickLayout={() => setLayoutPicker(true)}
                 />
               ) : (
                 <OverviewPanel
@@ -1014,6 +1050,10 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
                   matchedCount={matched.size}
                   hasInventory={project.inventory.length > 0}
                   map={draft}
+                  layouts={project.layouts}
+                  layoutColor={layoutColor}
+                  tint={tintLayouts}
+                  onTint={setTintLayouts}
                   onShow={selectAndShow}
                   onRenumberAll={() => {
                     setNumbering((n) => ({ ...n, scope: 'all' }));
@@ -1028,18 +1068,51 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
       </div>
 
       <MapSettingsModal open={settingsOpen} map={draft} onClose={() => setSettingsOpen(false)} onApply={(patch) => commit((d) => ({ ...d, ...patch }))} />
+      {layoutPicker && selected.length > 0 && (
+        <LayoutPickerModal
+          project={project}
+          title={single ? `Gắn hình mẫu cho ô ${single.label.trim() || 'chưa đánh số'}` : `Gắn hình mẫu cho ${selected.length} ô`}
+          description={
+            floors.length
+              ? `Áp dụng cho ${selected.length > 1 ? 'các ô đã chọn' : 'ô này'} ở mọi tầng (${floors.length} tầng). Căn nào khác mẫu thì gắn riêng trên thẻ căn ở tab Mặt bằng.`
+              : 'Áp dụng cho các ô đã chọn.'
+          }
+          current={(() => {
+            const ids = new Set(units.filter((u) => selSet.has(u.id)).map((u) => u.layoutId));
+            return ids.size === 1 ? [...ids][0] : undefined;
+          })()}
+          clearLabel={() => 'Không gắn hình mẫu'}
+          onApply={(layoutId) => assignLayout(layoutId)}
+          onClose={() => setLayoutPicker(false)}
+        />
+      )}
     </div>
   );
 }
 
-const EditorUnit = memo(function EditorUnit({ id, points, vh, state, dashed }: { id: string; points: number[]; vh: number; state: 'selected' | 'warn' | 'matched' | 'plain'; dashed: boolean }) {
-  const color = state === 'selected' ? '#f59e0b' : state === 'warn' ? '#e11d48' : state === 'matched' ? '#16a34a' : '#2563eb';
+const EditorUnit = memo(function EditorUnit({
+  id,
+  points,
+  vh,
+  state,
+  dashed,
+  tint,
+}: {
+  id: string;
+  points: number[];
+  vh: number;
+  state: 'selected' | 'warn' | 'matched' | 'plain';
+  dashed: boolean;
+  /** Tô theo hình mẫu (màu của hình mẫu gắn cho ô). */
+  tint?: string;
+}) {
+  const color = state === 'selected' ? '#f59e0b' : state === 'warn' ? '#e11d48' : (tint ?? (state === 'matched' ? '#16a34a' : '#2563eb'));
   return (
     <polygon
       data-unit={id}
       points={svgPoints(points, vh)}
       fill={color}
-      fillOpacity={state === 'selected' ? 0.32 : 0.16}
+      fillOpacity={state === 'selected' ? 0.32 : tint ? 0.4 : 0.16}
       stroke={color}
       strokeWidth={state === 'selected' ? 2.5 : 1.5}
       strokeDasharray={dashed ? '5 3' : undefined}
@@ -1069,6 +1142,10 @@ function OverviewPanel({
   matchedCount,
   hasInventory,
   map,
+  layouts,
+  layoutColor,
+  tint,
+  onTint,
   onShow,
   onRenumberAll,
   onSettings,
@@ -1080,12 +1157,22 @@ function OverviewPanel({
   matchedCount: number;
   hasInventory: boolean;
   map: ProjectMap;
+  layouts: UnitLayout[];
+  layoutColor: Map<string, string>;
+  tint: boolean;
+  onTint: (on: boolean) => void;
   onShow: (ids: string[]) => void;
   onRenumberAll: () => void;
   onSettings: () => void;
 }) {
   const floors = floorList(map);
   const sorted = useMemo(() => [...units].sort((a, b) => compareCodes(a.label || '~', b.label || '~')), [units]);
+  const byLayout = useMemo(() => {
+    const out = new Map<string, string[]>();
+    for (const u of units) if (u.layoutId) out.set(u.layoutId, [...(out.get(u.layoutId) ?? []), u.id]);
+    return out;
+  }, [units]);
+  const noLayout = units.filter((u) => !u.layoutId || !layoutColor.has(u.layoutId));
   return (
     <>
       <PanelSection>
@@ -1151,6 +1238,34 @@ function OverviewPanel({
           </div>
         </PanelSection>
       )}
+      {layouts.length > 0 && units.length > 0 && (
+        <PanelSection title="Hình mẫu theo ô">
+          <Toggle checked={tint} onChange={onTint} label="Tô màu theo hình mẫu" description="Kiểm tra nhanh: căn góc, căn giữa đã gắn đúng mẫu chưa." />
+          <ul className="mt-2.5 space-y-1.5 text-[13px]">
+            {layouts
+              .filter((l) => byLayout.has(l.id))
+              .map((l) => (
+                <li key={l.id} className="flex items-center gap-2">
+                  <span className="size-3 shrink-0 rounded-sm" style={{ backgroundColor: layoutColor.get(l.id) }} />
+                  <span className="min-w-0 flex-1 truncate font-mono font-semibold text-slate-700">{l.code}</span>
+                  <button type="button" onClick={() => onShow(byLayout.get(l.id)!)} className="font-bold text-slate-900 hover:text-brand-700 hover:underline">
+                    {byLayout.get(l.id)!.length} ô
+                  </button>
+                </li>
+              ))}
+            {noLayout.length > 0 && (
+              <li className="flex items-center gap-2">
+                <span className="size-3 shrink-0 rounded-sm bg-slate-400/60" />
+                <span className="flex-1 text-slate-600">Chưa gắn hình mẫu</span>
+                <button type="button" onClick={() => onShow(noLayout.map((u) => u.id))} className="font-bold text-slate-900 hover:text-brand-700 hover:underline">
+                  {noLayout.length} ô
+                </button>
+              </li>
+            )}
+          </ul>
+          <p className="mt-2 text-xs leading-relaxed text-slate-500">Chọn một hoặc nhiều ô (Chọn nhiều) → “Gắn hình mẫu”{floors.length ? ' — áp dụng cho ô đó ở mọi tầng' : ''}.</p>
+        </PanelSection>
+      )}
       <PanelSection title="Bản đồ">
         <p className="text-[13px] text-slate-600">
           {floors.length ? `Tầng điển hình: tầng ${floors[floors.length - 1]}–${floors[0]} (${floors.length} tầng)` : 'Một mặt bằng'}
@@ -1190,6 +1305,9 @@ function SelectionPanel({
   onRenumber,
   onRemove,
   onClear,
+  layouts,
+  overrides,
+  onPickLayout,
 }: {
   map: ProjectMap;
   selected: string[];
@@ -1206,9 +1324,17 @@ function SelectionPanel({
   onRenumber: () => void;
   onRemove: () => void;
   onClear: () => void;
+  layouts: UnitLayout[];
+  /** Số căn ở các ô đang chọn đã gắn hình mẫu riêng. */
+  overrides: number;
+  onPickLayout: () => void;
 }) {
   const count = selected.length;
   const vertexActive = !!(single && activeVertex && activeVertex.id === single.id);
+  const chosen = map.units.filter((u) => selected.includes(u.id));
+  const used = new Set(chosen.map((u) => u.layoutId).filter((id): id is string => !!id && layouts.some((l) => l.id === id)));
+  const current = single?.layoutId ? layouts.find((l) => l.id === single.layoutId) : undefined;
+  const bare = chosen.filter((u) => !u.layoutId || !used.has(u.layoutId)).length;
   return (
     <>
       {single ? (
@@ -1257,6 +1383,31 @@ function SelectionPanel({
           <p className="mt-1 text-xs text-slate-500">Kéo một ô bất kỳ để di chuyển cả nhóm.</p>
         </PanelSection>
       )}
+      <PanelSection title="Hình mẫu">
+        {single ? (
+          current ? (
+            <div className="flex items-center gap-2.5">
+              <ImageView id={current.images[0]} fit="contain" className="h-12 w-16 shrink-0 rounded-md bg-slate-50 ring-1 ring-slate-200" />
+              <div className="min-w-0">
+                <div className="truncate font-mono text-[13px] font-bold text-slate-900">{current.code}</div>
+                {current.tags.length > 0 && <div className="truncate text-xs text-slate-500">{current.tags.join(' · ')}</div>}
+              </div>
+            </div>
+          ) : (
+            <p className="text-[13px] text-slate-500">Ô chưa gắn hình mẫu.</p>
+          )
+        ) : (
+          <p className="text-[13px] text-slate-600">
+            {count} ô · {used.size ? `${used.size} hình mẫu` : 'chưa gắn hình mẫu'}
+            {used.size > 0 && bare > 0 ? ` · ${bare} ô chưa gắn` : ''}
+          </p>
+        )}
+        <Button size="sm" icon={LayoutTemplate} className="mt-2" onClick={onPickLayout}>
+          {single && current ? 'Đổi hình mẫu' : count > 1 ? `Gắn hình mẫu cho ${count} ô` : 'Gắn hình mẫu'}
+        </Button>
+        {floors.length > 0 && <p className="mt-1.5 text-xs text-slate-400">Áp dụng cho {count > 1 ? 'các ô này' : 'ô này'} ở mọi tầng.</p>}
+        {overrides > 0 && <p className="mt-1 text-xs text-amber-700">{overrides} căn ở {count > 1 ? 'các ô này' : 'ô này'} đã gắn hình mẫu riêng — vẫn giữ (ưu tiên hơn hình mẫu theo ô).</p>}
+      </PanelSection>
       <PanelSection title="Thao tác">
         <div className="grid grid-cols-2 gap-2">
           {single && (
@@ -1544,6 +1695,7 @@ function RenumberPanel({
 const COLOR_OPTIONS: Array<{ value: MapColorBy; label: string }> = [
   { value: 'status', label: 'Trạng thái (còn / đã bán)' },
   { value: 'type', label: 'Loại căn' },
+  { value: 'layout', label: 'Hình mẫu (căn góc, căn giữa…)' },
   { value: 'price', label: 'Mức giá' },
   { value: 'direction', label: 'Hướng' },
 ];

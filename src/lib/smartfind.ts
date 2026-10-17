@@ -1795,6 +1795,28 @@ export function buildProjectIndex(project: Project, units: Property[], options: 
     });
   });
 
+  // Thư viện hình mẫu (căn góc, căn giữa…) — hỏi "căn góc thiết kế thế nào" ra đúng mẫu.
+  for (const l of p.layouts) {
+    const parts = [
+      l.tags.join(', '),
+      l.area && `DT ${l.area.toLocaleString('vi-VN')} m²`,
+      l.bedrooms && `${l.bedrooms} phòng ngủ${l.bathrooms ? `, ${l.bathrooms} WC` : ''}`,
+      l.note,
+    ].filter(Boolean);
+    add({
+      kind: 'unitType',
+      group: 'layouts',
+      section: 'Hình mẫu căn',
+      title: `Mẫu ${l.code}${l.name.trim() ? ` – ${l.name.trim()}` : ''}`,
+      text: parts.join(' · '),
+      topics: ['san_pham'],
+      tab: 'mat-bang',
+      anchor: 'layouts',
+      bedrooms: l.bedrooms,
+      areaRange: l.area ? [l.area, l.area] : undefined,
+    });
+  }
+
   // Pháp lý
   const progress = legalProgress(p);
   if (progress.checked > 0) {

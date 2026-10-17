@@ -498,7 +498,7 @@ function OverviewTab({
                 {p.priceNote}
               </p>
             )}
-            <UnitTypesTable rows={p.unitTypes} />
+            <UnitTypesTable rows={p.unitTypes} layouts={p.layouts} />
           </Card>
         )}
 

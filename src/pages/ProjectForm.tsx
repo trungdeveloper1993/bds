@@ -62,6 +62,11 @@ function ProjectFormInner({ initial, isNew }: { initial: Project; isNew: boolean
         documents: latest?.documents ?? d.documents,
         legalChecklist: latest?.legalChecklist ?? d.legalChecklist,
         faqs: latest?.faqs ?? d.faqs,
+        maps: latest?.maps ?? d.maps,
+        inventory: latest?.inventory ?? d.inventory,
+        layouts: latest?.layouts ?? d.layouts,
+        layoutAssignments: latest?.layoutAssignments ?? d.layoutAssignments,
+        sales: latest?.sales ?? d.sales,
         unitTypes: d.unitTypes.filter((r) => r.name.trim() || r.area.trim() || r.price.trim()),
       });
       releaseNavigationGuard();

@@ -109,11 +109,12 @@ export async function readSpreadsheet(file: File): Promise<string[][]> {
 
 // ---------------------------------------------------------------- Nhận cột
 
-export type InventoryField = 'code' | 'type' | 'area' | 'price' | 'status' | 'direction' | 'note';
+export type InventoryField = 'code' | 'type' | 'layout' | 'area' | 'price' | 'status' | 'direction' | 'note';
 
 export const FIELD_LABEL: Record<InventoryField, string> = {
   code: 'Mã căn',
   type: 'Loại căn',
+  layout: 'Mẫu căn (hình mẫu)',
   area: 'Diện tích',
   price: 'Giá',
   status: 'Trạng thái',
@@ -121,13 +122,14 @@ export const FIELD_LABEL: Record<InventoryField, string> = {
   note: 'Ghi chú',
 };
 
-// Thứ tự quan trọng: "Giá căn" là cột giá, "Loại căn" là cột loại — cột mã căn xét sau cùng.
+// Thứ tự quan trọng: "Giá căn" là cột giá, "Loại căn" là cột loại, "Mẫu căn" là cột hình mẫu — cột mã căn xét sau cùng.
 const HEADER_RULES: Array<[InventoryField, RegExp]> = [
   ['price', /\b(gia|tong gia|gia ban|thanh tien|gia tri|price)\b/],
   ['area', /\b(dien tich|dt|dtsd|thong thuy|tim tuong|m2|area|s)\b/],
   ['status', /\b(trang thai|tinh trang|tt|status|hien trang)\b/],
   ['direction', /\b(huong|huong cua|huong ban cong|direction)\b/],
-  ['type', /\b(loai|loai can|loai hinh|phong ngu|pn|layout|type)\b/],
+  ['type', /\b(loai|loai can|loai hinh|phong ngu|pn|type)\b/],
+  ['layout', /\b(mau|mau can|ma mau|hinh mau|thiet ke|mau thiet ke|kieu can|layout|mat bang can)\b/],
   ['note', /\b(ghi chu|view|vi tri|note|mo ta)\b/],
   ['code', /\b(ma can|ma lo|ma nen|ma sp|ma san pham|ma|can so|so can|lo so|so lo|unit|code|can ho|can|lo|nen)\b/],
 ];
@@ -274,6 +276,8 @@ export function matchUnitType(text: string, types: UnitTypeRow[]): UnitTypeRow |
 export interface ImportRow {
   code: string;
   item: Partial<Omit<InventoryItem, 'code' | 'updatedAt'>>;
+  /** Mã hình mẫu ghi trong bảng (cột "Mẫu căn"), chưa đối chiếu với thư viện hình mẫu. */
+  layout?: string;
   /** Ô có chữ nhưng không hiểu (vd trạng thái lạ) — báo để người dùng kiểm tra. */
   warnings: string[];
 }
@@ -314,7 +318,8 @@ export function rowsToItems(rows: string[][], map: ColumnMap, headerRow: number,
       else warnings.push(`loại "${cell('type')}"`);
     }
     if (cell('note')) item.note = cell('note');
-    out.push({ code, item, warnings });
+    const layout = cell('layout').length <= 40 ? cell('layout') : '';
+    out.push({ code, item, ...(layout ? { layout } : {}), warnings });
   });
   return out;
 }

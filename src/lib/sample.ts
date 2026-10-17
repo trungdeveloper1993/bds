@@ -1,11 +1,13 @@
-import type { Direction, InventoryItem, InventoryStatus, MapUnit, Project, ProjectMap, SalesTerms, UnitTypeRow } from '../types';
+import type { Direction, InventoryItem, InventoryStatus, LayoutAssignment, MapUnit, Project, ProjectMap, SalesTerms, UnitLayout, UnitTypeRow } from '../types';
 import { emptyProject } from './defaults';
 import { todayStr } from './format';
-import { saveImage, saveImageSized } from './media';
+import { saveImageSized } from './media';
 
 /*
  * Dự án mẫu để xem thử bản đồ mặt bằng & bảng hàng: ảnh mặt bằng, hình mẫu căn và bảng hàng
  * đều do ứng dụng tự vẽ / tự tạo (minh hoạ, không phải dữ liệu thật của dự án nào).
+ * Hình mẫu khác nhau theo vị trí: căn góc trái / phải (đảo chiều), căn giữa view sông / view công viên,
+ * và căn góc tầng 25 có sân vườn (gắn riêng từng căn).
  */
 
 export const SAMPLE_PROJECT_ID = 'du-an-mau';
@@ -245,16 +247,27 @@ function furniture(g: CanvasRenderingContext2D, item: Furniture, x: number, y: n
   }
 }
 
-async function drawLayout(kind: keyof typeof LAYOUTS): Promise<Blob> {
+/** Căn góc tầng trên cùng: thu gọn các phòng, thêm sân vườn phía trước. */
+function withGarden(rooms: Room[]): Room[] {
+  const k = 0.8;
+  return [
+    ...rooms.filter((r) => r.kind !== 'balcony').map((r) => ({ ...r, y: r.y * k, h: r.h * k })),
+    { x: 0, y: 0.8, w: 1, h: 0.2, label: 'SÂN VƯỜN', area: '18,4 m²', kind: 'balcony', items: ['plant'] },
+  ];
+}
+
+async function drawLayout(kind: keyof typeof LAYOUTS, o: { title: string; sub: string; mirror?: boolean; garden?: boolean; corner?: boolean }): Promise<Blob> {
   const { c, g } = makeCanvas(1200, 900);
   const spec = LAYOUTS[kind];
   g.fillStyle = '#ffffff';
   g.fillRect(0, 0, 1200, 900);
-  text(g, spec.title, 600, 52, 32, 800, '#0f172a');
-  text(g, 'Diện tích thông thủy · bản vẽ minh hoạ của dự án mẫu', 600, 92, 18, 400, '#64748b');
+  text(g, o.title, 600, 52, 30, 800, '#0f172a');
+  text(g, o.sub, 600, 92, 18, 400, '#64748b');
   const box = { x: 100, y: 140, w: 1000, h: 680 };
-  for (const r of spec.rooms) {
-    const x = box.x + r.x * box.w;
+  const rooms = o.garden ? withGarden(spec.rooms) : spec.rooms;
+  for (const r of rooms) {
+    // Đảo chiều: lật trái ↔ phải (chữ vẫn viết xuôi).
+    const x = box.x + (o.mirror ? 1 - r.x - r.w : r.x) * box.w;
     const y = box.y + r.y * box.h;
     const w = r.w * box.w;
     const h = r.h * box.h;
@@ -268,10 +281,26 @@ async function drawLayout(kind: keyof typeof LAYOUTS): Promise<Blob> {
     text(g, r.label, x + w / 2, y + (r.kind === 'balcony' ? h / 2 - 9 : h - 40), small ? 15 : 19, 800, '#0f172a');
     text(g, r.area, x + w / 2, y + (r.kind === 'balcony' ? h / 2 + 13 : h - 17), small ? 13 : 16, 500, '#475569');
   }
-  // Cửa vào căn hộ.
+  // Căn góc: mặt thoáng thứ hai (cửa sổ dọc tường ngoài).
+  if (o.corner) {
+    const wx = o.mirror ? box.x + box.w - 5 : box.x - 5;
+    g.fillStyle = '#7dd3fc';
+    for (const [from, to] of [
+      [0.06, 0.4],
+      [0.55, 0.78],
+    ])
+      g.fillRect(wx, box.y + box.h * from, 10, box.h * (to - from));
+    g.save();
+    g.translate(o.mirror ? box.x + box.w + 34 : box.x - 34, box.y + box.h * 0.42);
+    g.rotate(o.mirror ? Math.PI / 2 : -Math.PI / 2);
+    text(g, 'MẶT THOÁNG 2', 0, 0, 15, 700, '#0284c7');
+    g.restore();
+  }
+  // Cửa vào căn hộ (phía hành lang, ngược phía mặt thoáng).
+  const doorX = o.mirror ? box.x - 6 : box.x + box.w - 6;
   g.fillStyle = '#ffffff';
-  g.fillRect(box.x + box.w - 6, box.y + box.h * 0.55, 12, 80);
-  text(g, 'CỬA VÀO →', box.x + box.w + 10, box.y + box.h * 0.55 + 40, 15, 700, '#b45309', 'left');
+  g.fillRect(doorX, box.y + box.h * 0.55, 12, 80);
+  text(g, o.mirror ? '← CỬA VÀO' : 'CỬA VÀO →', o.mirror ? box.x - 10 : box.x + box.w + 10, box.y + box.h * 0.55 + 40, 15, 700, '#b45309', o.mirror ? 'right' : 'left');
   return toJpeg(c);
 }
 
@@ -318,16 +347,94 @@ function sampleInventory(types: { small: string; normal: string; corner: string 
   return items;
 }
 
+// ---------------------------------------------------------------- Hình mẫu theo vị trí căn
+
+interface SampleLayout {
+  id: string;
+  code: string;
+  name: string;
+  tags: string[];
+  kind: keyof typeof LAYOUTS;
+  typeId: string;
+  area: number;
+  bedrooms: number;
+  bathrooms: number;
+  /** Số căn trên mặt bằng tầng dùng hình mẫu này (mọi tầng). */
+  positions: number[];
+  mirror?: boolean;
+  garden?: boolean;
+  corner?: boolean;
+}
+
+const SAMPLE_LAYOUTS: SampleLayout[] = [
+  { id: 'mau-ht-3pn-goc-a', code: '3PN-GOC-A', name: 'Căn góc 3PN', tags: ['Căn góc', '2 mặt thoáng'], kind: '3pn', typeId: 'mau-3pn', area: 95.2, bedrooms: 3, bathrooms: 2, positions: [1, 9], corner: true },
+  {
+    id: 'mau-ht-3pn-goc-b',
+    code: '3PN-GOC-B',
+    name: 'Căn góc 3PN (đảo chiều)',
+    tags: ['Căn góc', '2 mặt thoáng', 'Đảo chiều'],
+    kind: '3pn',
+    typeId: 'mau-3pn',
+    area: 95.2,
+    bedrooms: 3,
+    bathrooms: 2,
+    positions: [8, 16],
+    corner: true,
+    mirror: true,
+  },
+  { id: 'mau-ht-2pn-a', code: '2PN-A', name: 'Căn giữa 2PN view sông', tags: ['Căn giữa', 'View sông'], kind: '2pn', typeId: 'mau-2pn', area: 68.5, bedrooms: 2, bathrooms: 2, positions: [2, 3, 6, 7] },
+  {
+    id: 'mau-ht-2pn-b',
+    code: '2PN-B',
+    name: 'Căn giữa 2PN view công viên',
+    tags: ['Căn giữa', 'View công viên', 'Đảo chiều'],
+    kind: '2pn',
+    typeId: 'mau-2pn',
+    area: 68.5,
+    bedrooms: 2,
+    bathrooms: 2,
+    positions: [10, 11, 14, 15],
+    mirror: true,
+  },
+  { id: 'mau-ht-1pn', code: '1PN+1', name: 'Căn 1PN + phòng đa năng', tags: ['Căn giữa'], kind: '1pn', typeId: 'mau-1pn', area: 52.3, bedrooms: 1, bathrooms: 1, positions: [4, 5, 12, 13] },
+  {
+    id: 'mau-ht-3pn-goc-sv',
+    code: '3PN-GOC-SV',
+    name: 'Căn góc tầng 25 có sân vườn',
+    tags: ['Căn góc', 'Có sân vườn'],
+    kind: '3pn',
+    typeId: 'mau-3pn',
+    area: 95.2,
+    bedrooms: 3,
+    bathrooms: 2,
+    positions: [],
+    corner: true,
+    garden: true,
+  },
+];
+
+/** Căn gắn riêng hình mẫu (khác các tầng còn lại cùng vị trí). */
+const SAMPLE_ASSIGNMENTS: LayoutAssignment[] = [
+  { code: 'A-25-01', layoutId: 'mau-ht-3pn-goc-sv' },
+  { code: 'A-25-08', layoutId: 'mau-ht-3pn-goc-sv' },
+];
+
 function sampleUnits(): MapUnit[] {
   const units: MapUnit[] = [];
   const rows: Array<readonly [number, number]> = [PLAN.top, PLAN.bottom];
   rows.forEach(([y0, y1], row) => {
     for (let i = 0; i < 8; i++) {
+      const n = row * 8 + i + 1;
       const x0 = (PLAN.x0 + i * PLAN.cell) / PLAN.w;
       const x1 = (PLAN.x0 + (i + 1) * PLAN.cell) / PLAN.w;
       const top = y0 / PLAN.h;
       const bottom = y1 / PLAN.h;
-      units.push({ id: `mau-${row}-${i}`, label: String(row * 8 + i + 1).padStart(2, '0'), points: [x0, top, x1, top, x1, bottom, x0, bottom] });
+      units.push({
+        id: `mau-${row}-${i}`,
+        label: String(n).padStart(2, '0'),
+        points: [x0, top, x1, top, x1, bottom, x0, bottom],
+        layoutId: SAMPLE_LAYOUTS.find((l) => l.positions.includes(n))?.id,
+      });
     }
   });
   return units;
@@ -336,13 +443,25 @@ function sampleUnits(): MapUnit[] {
 /** Tạo dự án mẫu (vẽ ảnh, lưu ảnh vào máy). Chưa lưu dự án — dùng saveProject để lưu. */
 export async function createSampleProject(): Promise<Project> {
   await document.fonts?.ready;
-  const [plan, l1, l2, l3] = await Promise.all([drawFloorPlan(), drawLayout('1pn'), drawLayout('2pn'), drawLayout('3pn')]);
+  const plan = await drawFloorPlan();
   const mapImage = await saveImageSized(plan, { maxSize: 4000, quality: 0.9 });
-  const [i1, i2, i3] = [await saveImage(l1), await saveImage(l2), await saveImage(l3)];
+  const layouts: UnitLayout[] = [];
+  for (const s of SAMPLE_LAYOUTS) {
+    const where = s.positions.length ? `Căn ${s.positions.map((n) => String(n).padStart(2, '0')).join(', ')} các tầng` : 'Căn A-25-01, A-25-08';
+    const blob = await drawLayout(s.kind, {
+      title: `HÌNH MẪU ${s.code} · ${String(s.area).replace('.', ',')} m²`,
+      sub: `${s.name} · ${where} · bản vẽ minh hoạ của dự án mẫu`,
+      mirror: s.mirror,
+      garden: s.garden,
+      corner: s.corner,
+    });
+    const image = await saveImageSized(blob, { maxSize: 2400, quality: 0.86 });
+    layouts.push({ id: s.id, code: s.code, name: s.name, tags: s.tags, images: [image.id], typeId: s.typeId, area: s.area, bedrooms: s.bedrooms, bathrooms: s.bathrooms, note: '' });
+  }
   const unitTypes: UnitTypeRow[] = [
-    { id: 'mau-1pn', name: '1PN+1', area: '52,3 m²', price: '2,5 – 2,9 tỷ', quantity: '84 căn', note: 'Phòng đa năng làm phòng làm việc / phòng trẻ em', imageId: i1 },
-    { id: 'mau-2pn', name: '2PN', area: '68,5 m²', price: '3,4 – 4,1 tỷ', quantity: '168 căn', note: '2 WC', imageId: i2 },
-    { id: 'mau-3pn', name: '3PN', area: '95,2 m²', price: '4,8 – 5,7 tỷ', quantity: '84 căn', note: 'Căn góc, 2 mặt thoáng', imageId: i3 },
+    { id: 'mau-1pn', name: '1PN+1', area: '52,3 m²', price: '2,5 – 2,9 tỷ', quantity: '84 căn', note: 'Phòng đa năng làm phòng làm việc / phòng trẻ em' },
+    { id: 'mau-2pn', name: '2PN', area: '68,5 m²', price: '3,4 – 4,1 tỷ', quantity: '168 căn', note: '2 WC' },
+    { id: 'mau-3pn', name: '3PN', area: '95,2 m²', price: '4,8 – 5,7 tỷ', quantity: '84 căn', note: 'Căn góc, 2 mặt thoáng' },
   ];
   const inventory = sampleInventory({ small: 'mau-1pn', normal: 'mau-2pn', corner: 'mau-3pn' });
   const prices = inventory.map((x) => x.price ?? 0);
@@ -367,8 +486,9 @@ export async function createSampleProject(): Promise<Project> {
     productTypes: ['can_ho'],
     developer: 'Chủ đầu tư minh hoạ',
     description:
-      'Dự án mẫu để xem thử bản đồ mặt bằng và bảng hàng: vào tab Mặt bằng, chạm vào từng căn để xem hình mẫu, giá, diện tích, hướng, còn hay đã bán; thử lọc "2pn dưới 3,8 tỷ còn hàng", đổi tầng, xem Bảng tầng.\nToàn bộ thông tin là minh hoạ do ứng dụng tạo — có thể xoá dự án này bất cứ lúc nào.',
-    highlights: 'Mặt bằng 16 căn/tầng, tầng 5–25\n3 loại căn: 1PN+1, 2PN, 3PN (căn góc)\nBảng hàng 336 căn: đang bán, giữ chỗ, đã cọc, đã bán, chưa mở bán',
+      'Dự án mẫu để xem thử bản đồ mặt bằng và bảng hàng: vào tab Mặt bằng, chạm vào từng căn để xem đúng hình mẫu của căn đó (căn góc, căn giữa…), giá, diện tích, hướng, còn hay đã bán; thử lọc "2pn dưới 3,8 tỷ còn hàng" hoặc "căn góc", đổi tầng, xem Bảng tầng.\nToàn bộ thông tin là minh hoạ do ứng dụng tạo — có thể xoá dự án này bất cứ lúc nào.',
+    highlights:
+      'Mặt bằng 16 căn/tầng, tầng 5–25\n3 loại căn: 1PN+1, 2PN, 3PN (căn góc)\n6 hình mẫu theo vị trí: căn góc trái / phải (đảo chiều), căn giữa view sông / view công viên, căn góc tầng 25 có sân vườn\nBảng hàng 336 căn: đang bán, giữ chỗ, đã cọc, đã bán, chưa mở bán',
     scale: '1 toà 25 tầng, 336 căn hộ (minh hoạ)',
     totalUnits: inventory.length,
     unitAreaRange: '52 – 95 m²',
@@ -379,6 +499,8 @@ export async function createSampleProject(): Promise<Project> {
     handover: 'Quý IV/2027 (minh hoạ)',
     maps: [map],
     inventory,
+    layouts,
+    layoutAssignments: SAMPLE_ASSIGNMENTS,
     sales: sampleSales(),
     infoSource: 'Dữ liệu minh hoạ do ứng dụng tạo',
   });
