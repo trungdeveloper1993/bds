@@ -342,6 +342,53 @@ export function rectPoints(ax: number, ay: number, bx: number, by: number): numb
 const clamp01 = (v: number) => Math.min(1.2, Math.max(-0.2, v));
 export const clampPoints = (points: number[]) => points.map(clamp01);
 
+/** 4 góc theo thứ tự trên-trái, trên-phải, dưới-phải, dưới-trái (ô tứ giác vẽ theo thứ tự bất kỳ; ô khác dùng khung bao). */
+export function quadCorners(points: number[]): Pt[] {
+  if (points.length !== 8) {
+    const b = bbox(points);
+    return [
+      { x: b.x0, y: b.y0 },
+      { x: b.x1, y: b.y0 },
+      { x: b.x1, y: b.y1 },
+      { x: b.x0, y: b.y1 },
+    ];
+  }
+  const pts: Pt[] = [0, 1, 2, 3].map((i) => ({ x: points[i * 2], y: points[i * 2 + 1] }));
+  const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
+  const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
+  pts.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+  let start = 0;
+  pts.forEach((p, i) => {
+    if (p.x + p.y < pts[start].x + pts[start].y) start = i;
+  });
+  const ordered = [0, 1, 2, 3].map((i) => pts[(start + i) % 4]);
+  if (ordered[1].x < ordered[3].x) [ordered[1], ordered[3]] = [ordered[3], ordered[1]];
+  return ordered;
+}
+
+/**
+ * Chia một ô thành cols × rows ô con đều nhau (khoanh cả dãy căn rồi chia, không bị lệch dần như nhân bản).
+ * Nội suy theo 4 góc nên giữ được cả dãy căn nghiêng trong ảnh phối cảnh 3D. Thứ tự: từng hàng, trái sang phải.
+ */
+export function splitUnit(points: number[], cols: number, rows: number): number[][] {
+  const [tl, tr, br, bl] = quadCorners(points);
+  const at = (u: number, v: number): Pt => ({
+    x: (1 - v) * ((1 - u) * tl.x + u * tr.x) + v * ((1 - u) * bl.x + u * br.x),
+    y: (1 - v) * ((1 - u) * tl.y + u * tr.y) + v * ((1 - u) * bl.y + u * br.y),
+  });
+  const out: number[][] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const a = at(c / cols, r / rows);
+      const b = at((c + 1) / cols, r / rows);
+      const d = at((c + 1) / cols, (r + 1) / rows);
+      const e = at(c / cols, (r + 1) / rows);
+      out.push([a.x, a.y, b.x, b.y, d.x, d.y, e.x, e.y]);
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- Đánh số
 
 /** Số / mã kế tiếp: "05" → "06", "L-09" → "L-10", "A" → "B". */

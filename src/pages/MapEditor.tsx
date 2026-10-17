@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronUp,
+  Columns3,
   CopyPlus,
   Hash,
   ImageUp,
@@ -44,6 +45,7 @@ import {
   rectPoints,
   renumber,
   resolveCode,
+  splitUnit,
   translatePoints,
   unitCode,
   type Pt,
@@ -86,7 +88,7 @@ const TOOLS: Array<{ value: Tool; label: string; short: string; icon: LucideIcon
     short: 'Chữ nhật',
     icon: Square,
     key: 'R',
-    hint: 'Kéo trên ảnh để khoanh một căn; số căn tự tăng sau mỗi ô. Kéo bản đồ bằng 2 ngón tay (hoặc giữ phím cách).',
+    hint: 'Kéo trên ảnh để khoanh một căn; số căn tự tăng sau mỗi ô. Mẹo: khoanh cả dãy căn bằng một ô rồi bấm “Chia đều”. Kéo bản đồ bằng 2 ngón tay (hoặc giữ phím cách).',
   },
   {
     value: 'poly',
@@ -212,7 +214,7 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
   const [hover, setHover] = useState<Pt | null>(null);
   const [ghost, setGhost] = useState<{ kind: 'rect' | 'marquee'; points: number[] } | null>(null);
   const [k, setK] = useState(1);
-  const [panel, setPanel] = useState<null | 'row' | 'renumber'>(null);
+  const [panel, setPanel] = useState<null | 'row' | 'renumber' | 'split'>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -655,6 +657,37 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
     toast(`Đã thêm ${rowCopies.length} ô`);
   };
 
+  // Chia đều: khoanh cả dãy căn bằng một ô rồi chia thành từng căn.
+  const [split, setSplit] = useState({ cols: 8, rows: 1, relabel: true, start: '' });
+  const splitStart = split.start.trim() || single?.label.trim() || pending;
+  const splitCells = useMemo(() => {
+    if (panel !== 'split' || !single) return [];
+    let label = splitStart;
+    return splitUnit(single.points, split.cols, split.rows).map((points, i): MapUnit => {
+      if (i) label = nextLabel(label, step);
+      return { id: uid(), points: clampPoints(points), label: split.relabel ? label : '' };
+    });
+  }, [panel, single, split, splitStart, step]);
+  const applySplit = () => {
+    if (!single || !splitCells.length) return;
+    const id = single.id;
+    setUnits((list) => {
+      const at = list.findIndex((u) => u.id === id);
+      const next = list.filter((u) => u.id !== id);
+      next.splice(Math.max(0, at), 0, ...splitCells);
+      return next;
+    });
+    setSelected(splitCells.map((c) => c.id));
+    const last = splitCells[splitCells.length - 1].label;
+    if (last) setPending(nextLabel(last, step));
+    setPanel(null);
+    toast(`Đã chia thành ${splitCells.length} ô`);
+  };
+  // Bảng thao tác cần ô đang chọn: bỏ chọn thì đóng bảng.
+  useEffect(() => {
+    if ((panel === 'split' && !singleId) || (panel === 'row' && !selected.length)) setPanel(null);
+  }, [panel, singleId, selected.length]);
+
   const [numbering, setNumbering] = useState({ prefix: '', start: '1', digits: '2', scope: 'selected' as 'selected' | 'all' });
   const applyRenumber = () => {
     const ids = numbering.scope === 'selected' && selected.length ? new Set(selected) : undefined;
@@ -685,7 +718,7 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
         />
       ))}
       {units.map((u) => u.label.trim() && <UnitLabel key={`l-${u.id}`} points={u.points} vh={VH} text={u.label} />)}
-      {rowCopies.map((c) => (
+      {[...rowCopies, ...splitCells].map((c) => (
         <g key={c.id} className="pointer-events-none">
           <polygon points={svgPoints(c.points, VH)} fill="#f59e0b" fillOpacity={0.12} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
           {c.label && <UnitLabel points={c.points} vh={VH} text={c.label} className="opacity-70" />}
@@ -918,7 +951,15 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
             aria-expanded={panelOpen}
           >
             <span className="truncate text-[13px] font-bold text-slate-800">
-              {panel === 'row' ? 'Nhân bản theo dãy' : panel === 'renumber' ? 'Đánh số lại' : selected.length ? `Đã chọn ${selected.length} ô` : toolInfo.label}
+              {panel === 'row'
+                ? 'Nhân bản theo dãy'
+                : panel === 'renumber'
+                  ? 'Đánh số lại'
+                  : panel === 'split'
+                    ? 'Chia đều'
+                    : selected.length
+                      ? `Đã chọn ${selected.length} ô`
+                      : toolInfo.label}
             </span>
             {panelOpen ? <ChevronDown size={18} className="text-slate-400" /> : <ChevronUp size={18} className="text-slate-400" />}
           </button>
@@ -926,12 +967,23 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
             <div className="min-h-0 flex-1 overflow-y-auto">
               {panel === 'row' ? (
                 <RowPanel value={row} onChange={setRow} copies={rowCopies.length} step={step} onStep={setStep} onApply={applyRow} onCancel={() => setPanel(null)} />
+              ) : panel === 'split' && single ? (
+                <SplitPanel
+                  value={split}
+                  onChange={setSplit}
+                  firstLabel={splitStart}
+                  lastLabel={splitCells[splitCells.length - 1]?.label ?? ''}
+                  cells={splitCells.length}
+                  step={step}
+                  onStep={setStep}
+                  onApply={applySplit}
+                  onCancel={() => setPanel(null)}
+                />
               ) : panel === 'renumber' ? (
                 <RenumberPanel value={numbering} onChange={setNumbering} hasSelection={selected.length > 0} total={units.length} step={step} onStep={setStep} onApply={applyRenumber} onCancel={() => setPanel(null)} />
               ) : selected.length ? (
                 <SelectionPanel
                   map={draft}
-                  units={units}
                   selected={selected}
                   single={single}
                   floors={floors}
@@ -942,6 +994,10 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
                   onLabelDone={() => (labelEdit.current = false)}
                   onDuplicate={duplicate}
                   onRow={() => setPanel('row')}
+                  onSplit={() => {
+                    setSplit((s) => ({ ...s, start: '' }));
+                    setPanel('split');
+                  }}
                   onRenumber={() => {
                     setNumbering((n) => ({ ...n, scope: 'selected' }));
                     setPanel('renumber');
@@ -1120,7 +1176,6 @@ function OverviewPanel({
 
 function SelectionPanel({
   map,
-  units,
   selected,
   single,
   floors,
@@ -1131,12 +1186,12 @@ function SelectionPanel({
   onLabelDone,
   onDuplicate,
   onRow,
+  onSplit,
   onRenumber,
   onRemove,
   onClear,
 }: {
   map: ProjectMap;
-  units: MapUnit[];
   selected: string[];
   single: MapUnit | null;
   floors: number[];
@@ -1147,6 +1202,7 @@ function SelectionPanel({
   onLabelDone: () => void;
   onDuplicate: () => void;
   onRow: () => void;
+  onSplit: () => void;
   onRenumber: () => void;
   onRemove: () => void;
   onClear: () => void;
@@ -1203,11 +1259,16 @@ function SelectionPanel({
       )}
       <PanelSection title="Thao tác">
         <div className="grid grid-cols-2 gap-2">
-          <Button size="sm" icon={CopyPlus} onClick={onDuplicate}>
-            Nhân bản
-          </Button>
+          {single && (
+            <Button size="sm" icon={Columns3} onClick={onSplit}>
+              Chia đều
+            </Button>
+          )}
           <Button size="sm" icon={Rows3} onClick={onRow}>
             Nhân theo dãy
+          </Button>
+          <Button size="sm" icon={CopyPlus} onClick={onDuplicate}>
+            Nhân bản
           </Button>
           <Button size="sm" icon={ListOrdered} onClick={onRenumber}>
             Đánh số lại
@@ -1216,7 +1277,11 @@ function SelectionPanel({
             {vertexActive ? 'Xoá góc' : `Xoá ${count > 1 ? `${count} ô` : 'ô'}`}
           </Button>
         </div>
-        {units.length > 1 && count === 1 && <p className="mt-2 text-xs leading-relaxed text-slate-500">Mẹo: khoanh một căn, rồi “Nhân theo dãy” để có cả dãy căn liền nhau, số tự tăng.</p>}
+        {single && (
+          <p className="mt-2 text-xs leading-relaxed text-slate-500">
+            Mẹo: khoanh cả dãy căn thành một ô rồi bấm “Chia đều” — các căn thẳng hàng, số tự tăng. “Nhân theo dãy” dùng khi chỉ khoanh một căn mẫu.
+          </p>
+        )}
       </PanelSection>
     </>
   );
@@ -1264,7 +1329,9 @@ function RowPanel({
   return (
     <>
       <PanelSection title="Nhân bản theo dãy">
-        <p className="mb-3 text-[13px] leading-relaxed text-slate-600">Các ô đang chọn được nhân ra liền nhau theo hướng đã chọn — xem trước bằng nét đứt trên bản đồ.</p>
+        <p className="mb-3 text-[13px] leading-relaxed text-slate-600">
+          Các ô đang chọn được nhân ra liền nhau theo hướng đã chọn — xem trước bằng nét đứt. Ô nét đứt lệch dần so với mặt bằng: chỉnh khoảng hở, hoặc khoanh cả dãy rồi dùng “Chia đều”.
+        </p>
         <div className="grid grid-cols-4 gap-1.5">
           {DIRS.map((d) => (
             <button
@@ -1313,6 +1380,87 @@ function RowPanel({
         </Button>
         <Button variant="primary" icon={Check} onClick={onApply} disabled={!copies} className="flex-1">
           Thêm {copies} ô
+        </Button>
+      </div>
+    </>
+  );
+}
+
+function Stepper({ value, onChange, min, max, label }: { value: number; onChange: (n: number) => void; min: number; max: number; label: string }) {
+  return (
+    <div className="flex items-center gap-1">
+      <IconButton icon={ChevronDown} label={`Bớt ${label}`} size="sm" disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))} />
+      <TextInput
+        inputMode="numeric"
+        aria-label={label}
+        value={String(value)}
+        onChange={(e) => onChange(Math.min(max, Math.max(min, Number(e.target.value.replace(/\D/g, '')) || min)))}
+        className="px-2 text-center font-bold"
+      />
+      <IconButton icon={ChevronUp} label={`Thêm ${label}`} size="sm" disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))} />
+    </div>
+  );
+}
+
+function SplitPanel({
+  value,
+  onChange,
+  firstLabel,
+  lastLabel,
+  cells,
+  step,
+  onStep,
+  onApply,
+  onCancel,
+}: {
+  value: { cols: number; rows: number; relabel: boolean; start: string };
+  onChange: (v: { cols: number; rows: number; relabel: boolean; start: string }) => void;
+  firstLabel: string;
+  lastLabel: string;
+  cells: number;
+  step: number;
+  onStep: (s: number) => void;
+  onApply: () => void;
+  onCancel: () => void;
+}) {
+  const set = (patch: Partial<typeof value>) => onChange({ ...value, ...patch });
+  return (
+    <>
+      <PanelSection title="Chia đều">
+        <p className="mb-3 text-[13px] leading-relaxed text-slate-600">
+          Chia ô đang chọn (cả dãy căn) thành các căn bằng nhau — giữ đúng độ nghiêng nếu là ảnh phối cảnh. Xem trước bằng nét đứt.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Số căn theo chiều ngang">
+            <Stepper value={value.cols} onChange={(cols) => set({ cols })} min={1} max={60} label="số cột" />
+          </Field>
+          <Field label="Số hàng">
+            <Stepper value={value.rows} onChange={(rows) => set({ rows })} min={1} max={20} label="số hàng" />
+          </Field>
+        </div>
+        <Checkbox className="mt-3" checked={value.relabel} onChange={(v) => set({ relabel: v })} label="Đánh số các căn mới" />
+        {value.relabel && (
+          <>
+            <div className="mt-2 grid grid-cols-2 items-end gap-3">
+              <Field label="Bắt đầu từ số">
+                <TextInput value={value.start} onChange={(e) => set({ start: e.target.value })} placeholder={firstLabel} />
+              </Field>
+              <p className="pb-2.5 text-[13px] text-slate-600">
+                {firstLabel} → <b className="text-slate-900">{lastLabel}</b>
+              </p>
+            </div>
+            <div className="mt-2">
+              <StepSelect step={step} onStep={onStep} />
+            </div>
+          </>
+        )}
+      </PanelSection>
+      <div className="flex gap-2 px-4 py-3">
+        <Button variant="ghost" onClick={onCancel}>
+          Huỷ
+        </Button>
+        <Button variant="primary" icon={Columns3} onClick={onApply} disabled={cells < 2} className="flex-1">
+          Chia thành {cells} ô
         </Button>
       </div>
     </>

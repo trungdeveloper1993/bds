@@ -306,19 +306,24 @@ function MapViewer({
     };
   }, [fullscreen]);
 
-  /** Điện thoại: thẻ chi tiết che nửa dưới màn hình → đưa căn vừa chạm lên phía trên. */
+  /**
+   * Điện thoại: thẻ chi tiết chiếm nửa dưới màn hình → đưa căn vừa chạm vào chỗ còn nhìn thấy
+   * (toàn màn hình: bản đồ thu nhỏ phía trên thẻ; trong trang: cuộn trang lên).
+   */
   const reveal = (id: string) => {
     window.setTimeout(() => {
       const el = document.querySelector(`#map-viewer [data-unit="${id}"]`);
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      if (rect.bottom <= window.innerHeight * 0.4) return;
-      if (fullscreen) focusUnit(id, false);
-      else {
-        const top = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0;
-        window.scrollBy({ top: rect.top - top - 24, behavior: 'smooth' });
+      if (fullscreen) {
+        const box = document.querySelector('#map-viewer svg[aria-label="Bản đồ mặt bằng"]')?.getBoundingClientRect();
+        if (box && (rect.top < box.top || rect.bottom > box.bottom || rect.left < box.left || rect.right > box.right)) focusUnit(id, false);
+        return;
       }
-    }, 60);
+      if (rect.bottom <= window.innerHeight * 0.4) return;
+      const top = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0;
+      window.scrollBy({ top: rect.top - top - 24, behavior: 'smooth' });
+    }, 80);
   };
 
   const select = (id: string | null) => {
@@ -480,26 +485,8 @@ function MapViewer({
             value={filterText}
             onChange={setFilterText}
             placeholder="Lọc căn: 2pn, dưới 4 tỷ, hướng Đông Nam, còn hàng…"
-            className="order-last w-full sm:order-none sm:w-auto sm:min-w-56 sm:flex-1"
+            className="w-full sm:w-auto sm:min-w-56 sm:flex-1"
           />
-          <label className="ml-auto flex items-center gap-1.5 text-[13px] font-medium text-slate-500 sm:ml-0">
-            <Palette size={15} />
-            <span className="sr-only sm:not-sr-only">Tô màu theo</span>
-            <select
-              value={colorMode}
-              onChange={(e) => {
-                setColorBy(e.target.value as MapColorBy);
-                setLegendKey(null);
-              }}
-              className="rounded-lg border border-slate-300 bg-white py-1 pl-2 pr-7 text-[13px] font-semibold text-slate-800 focus:border-brand-500 focus:outline-none"
-            >
-              {COLOR_BY.filter((o) => !(hidePrice && o.value === 'price')).map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
 
         {narrowing && (
@@ -540,7 +527,7 @@ function MapViewer({
           </div>
         )}
 
-        <div className={cn('lg:flex', fullscreen && 'flex min-h-0 flex-1')}>
+        <div className={cn('lg:flex', fullscreen && 'flex min-h-0 flex-1 flex-col lg:flex-row')}>
           <div className={cn('min-w-0 flex-1', fullscreen && 'flex min-h-0 flex-col')}>
             {mode === 'map' ? (
               <MapCanvas
@@ -587,8 +574,34 @@ function MapViewer({
               active={legendKey}
               onToggle={(key) => setLegendKey((k) => (k === key ? null : key))}
               scope={floors.length ? (mode === 'grid' ? 'cả toà' : `tầng ${floor}`) : ''}
+              colorBy={
+                <label className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                  <Palette size={14} />
+                  <span className="sr-only sm:not-sr-only">Tô màu theo</span>
+                  <select
+                    aria-label="Tô màu theo"
+                    value={colorMode}
+                    onChange={(e) => {
+                      setColorBy(e.target.value as MapColorBy);
+                      setLegendKey(null);
+                    }}
+                    className="rounded-lg border border-slate-300 bg-white py-1 pl-2 pr-7 text-xs font-semibold text-slate-800 focus:border-brand-500 focus:outline-none"
+                  >
+                    {COLOR_BY.filter((o) => !(hidePrice && o.value === 'price')).map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              }
             />
           </div>
+          {!desktop && fullscreen && details && (
+            <div className="max-h-[55%] shrink-0 overflow-y-auto border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_-12px_rgb(15_23_42/0.3)]">
+              {details}
+            </div>
+          )}
           {desktop && (
             <aside className={cn('w-[340px] shrink-0 border-l border-slate-100', fullscreen && 'overflow-y-auto')}>
               <div className={cn(!fullscreen && 'sticky top-20 max-h-[calc(100dvh-6rem)] overflow-y-auto')}>
@@ -600,6 +613,7 @@ function MapViewer({
       </div>
 
       {!desktop &&
+        !fullscreen &&
         details &&
         createPortal(
           <div className="pb-safe fixed inset-x-0 bottom-0 z-[58] max-h-[60dvh] animate-slide-up overflow-y-auto rounded-t-3xl bg-white shadow-[0_-12px_40px_-12px_rgb(15_23_42/0.35)] ring-1 ring-slate-200">
@@ -685,10 +699,23 @@ function FloorStepper({ floors, floor, onChange }: { floors: number[]; floor: nu
   );
 }
 
-function Legend({ coloring, counts, active, onToggle, scope }: { coloring: Coloring; counts: Map<string, number>; active: string | null; onToggle: (key: string) => void; scope: string }) {
+function Legend({
+  coloring,
+  counts,
+  active,
+  onToggle,
+  scope,
+  colorBy,
+}: {
+  coloring: Coloring;
+  counts: Map<string, number>;
+  active: string | null;
+  onToggle: (key: string) => void;
+  scope: string;
+  colorBy: ReactNode;
+}) {
   const entries = coloring.legend.filter((e) => (counts.get(e.key) ?? 0) > 0);
   const none = counts.get(NO_DATA) ?? 0;
-  if (!entries.length && !none) return null;
   const chip = (key: string, label: string, count: number, swatch: ReactNode) => (
     <button
       key={key}
@@ -707,9 +734,10 @@ function Legend({ coloring, counts, active, onToggle, scope }: { coloring: Color
   );
   return (
     <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 px-3 py-2.5 sm:px-4">
+      {colorBy}
       {entries.map((e) => chip(e.key, e.label, counts.get(e.key) ?? 0, <ColorDot color={e.color} />))}
       {none > 0 && chip(NO_DATA, 'Chưa có thông tin', none, <span className="inline-block size-2.5 shrink-0 rounded-full border border-dashed border-slate-500" />)}
-      {scope && <span className="ml-auto text-[11px] text-slate-400">Đếm {scope} · chạm để lọc</span>}
+      {(entries.length > 0 || none > 0) && <span className="ml-auto hidden text-[11px] text-slate-400 sm:inline">{scope ? `Đếm ${scope} · ` : ''}chạm để lọc</span>}
     </div>
   );
 }
