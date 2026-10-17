@@ -126,7 +126,7 @@ export function SearchOverlay() {
         ? []
         : customers.map((c) => ({
             item: c,
-            hay: buildHaystack([c.code, c.name, c.phone, c.phone2, c.email, c.locations.join(' '), c.requirements, c.notes]),
+            hay: buildHaystack([c.code, c.name, c.phone, c.phone2, c.email, c.tags.join(' '), c.locations.join(' '), c.requirements, c.notes]),
           })),
       docs,
     };

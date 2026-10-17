@@ -7,6 +7,7 @@ import {
   CUSTOMER_SOURCE_LABEL,
   CUSTOMER_STATUS,
   CUSTOMER_STATUSES,
+  CUSTOMER_TAG_SUGGESTIONS,
   DIRECTION_LABEL,
   DIRECTIONS,
   PAYMENT_LABEL,
@@ -16,8 +17,9 @@ import {
   TEMPERATURE,
   TEMPERATURES,
 } from '../constants';
-import { emptyCustomer } from '../lib/defaults';
+import { emptyCustomer, uniqueTags } from '../lib/defaults';
 import { todayStr } from '../lib/format';
+import { birthdayParts, tagCounts, toBirthday } from '../lib/messages';
 import { goBack, navigate, releaseNavigationGuard, useLocation } from '../lib/router';
 import { digitsOnly } from '../lib/text';
 import { useData } from '../store/data';
@@ -62,6 +64,20 @@ function CustomerFormInner({ initial, isNew }: { initial: Customer; isNew: boole
     return [...set].slice(0, 16);
   }, [customers]);
 
+  const tagSuggestions = useMemo(() => uniqueTags([...tagCounts(customers).map((x) => x.tag), ...CUSTOMER_TAG_SUGGESTIONS]), [customers]);
+
+  // Ngày / tháng sinh chọn riêng; chỉ lưu khi đủ cả hai và hợp lệ.
+  const [birth, setBirth] = useState(() => {
+    const b = birthdayParts(initial.birthday);
+    return { day: b?.day ?? 0, month: b?.month ?? 0 };
+  });
+  const setBirthPart = (patch: Partial<typeof birth>) => {
+    const next = { ...birth, ...patch };
+    setBirth(next);
+    update({ birthday: toBirthday(next.day, next.month) });
+  };
+  const birthInvalid = !!birth.day && !!birth.month && !d.birthday;
+
   const submit = async () => {
     if (saving) return;
     if (!d.name.trim()) {
@@ -75,6 +91,7 @@ function CustomerFormInner({ initial, isNew }: { initial: Customer; isNew: boole
       const saved = await saveCustomer({
         ...d,
         name: d.name.trim(),
+        tags: uniqueTags(d.tags),
         // Nhật ký và danh sách BĐS giới thiệu được cập nhật ở trang chi tiết.
         interests: latest?.interests ?? d.interests,
         interactions: latest?.interactions ?? d.interactions,
@@ -148,6 +165,30 @@ function CustomerFormInner({ initial, isNew }: { initial: Customer; isNew: boole
             <Field label="Năm sinh" htmlFor="birthYear">
               <NumberInput id="birthYear" integer value={d.birthYear} onChange={(birthYear) => update({ birthYear })} placeholder="VD: 1988" />
             </Field>
+            <Field
+              label="Sinh nhật (ngày / tháng)"
+              htmlFor="birthDay"
+              hint={birthInvalid ? <span className="font-semibold text-rose-600">Ngày không có trong tháng này.</span> : 'Nhắc gửi lời chúc trên trang Tổng quan.'}
+            >
+              <div className="grid grid-cols-2 gap-2">
+                <Select id="birthDay" aria-label="Ngày sinh" value={birth.day || ''} onChange={(e) => setBirthPart({ day: Number(e.target.value) })}>
+                  <option value="">Ngày</option>
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </Select>
+                <Select aria-label="Tháng sinh" value={birth.month || ''} onChange={(e) => setBirthPart({ month: Number(e.target.value) })}>
+                  <option value="">Tháng</option>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>
+                      Tháng {n}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </Field>
             <Field label="Nguồn khách" htmlFor="source">
               <Select id="source" value={d.source} onChange={(e) => update({ source: e.target.value as CustomerSource })}>
                 {(Object.keys(CUSTOMER_SOURCE_LABEL) as CustomerSource[]).map((s) => (
@@ -180,6 +221,9 @@ function CustomerFormInner({ initial, isNew }: { initial: Customer; isNew: boole
               />
             </Field>
           </FieldGrid>
+          <Field label="Nhãn / nhóm khách" htmlFor="tags" hint="Để lọc và gửi tin cả nhóm, VD “VIP”, “Nhà đầu tư”, “Khách Aurora”. Gõ rồi nhấn Enter." className="mt-4">
+            <TagInput id="tags" value={d.tags} onChange={(tags) => update({ tags })} suggestions={tagSuggestions} placeholder="VD: VIP" />
+          </Field>
         </FormSection>
 
         <FormSection title="Nhu cầu" icon={ClipboardList} description="Dùng để tự động ghép BĐS phù hợp.">

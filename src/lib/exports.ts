@@ -22,6 +22,7 @@ import {
 import type { Customer, Project, Property } from '../types';
 import { formatDate } from './format';
 import { formatAddress, formatProjectAddress } from './listing';
+import { formatBirthday, lastContactAt } from './messages';
 import { mainArea } from './match';
 import { formatBytes } from './media';
 import type { Sheet } from './xlsx';
@@ -170,9 +171,11 @@ export function customersSheet(customers: Customer[], projectById: Map<string, P
       { header: 'SĐT', width: 14 },
       { header: 'SĐT 2', width: 14 },
       { header: 'Email', width: 24 },
+      { header: 'Sinh nhật', width: 11 },
       { header: 'Nguồn', width: 18 },
       { header: 'Trạng thái', width: 16 },
       { header: 'Mức độ', width: 9 },
+      { header: 'Nhãn', width: 22 },
       { header: 'Nhu cầu', width: 9 },
       { header: 'Loại hình', width: 30 },
       { header: 'Dự án quan tâm', width: 28 },
@@ -190,6 +193,7 @@ export function customersSheet(customers: Customer[], projectById: Map<string, P
       { header: 'Hẹn chăm sóc', width: 13 },
       { header: 'Nội dung hẹn', width: 28 },
       { header: 'Số lần chăm sóc', width: 14 },
+      { header: 'Liên hệ gần nhất', width: 14 },
       { header: 'Ghi chú', width: 34 },
       { header: 'Ngày tạo', width: 12 },
     ],
@@ -199,9 +203,11 @@ export function customersSheet(customers: Customer[], projectById: Map<string, P
       c.phone,
       c.phone2,
       c.email,
+      formatBirthday(c.birthday, c.birthYear) || (c.birthYear ? String(c.birthYear) : ''),
       CUSTOMER_SOURCE_LABEL[c.source],
       CUSTOMER_STATUS[c.status].label,
       TEMPERATURE[c.temperature].label,
+      c.tags.join(', '),
       CUSTOMER_TRANSACTION_LABEL[c.transaction],
       c.propertyTypes.map((t) => PROPERTY_TYPE_LABEL[t]).join(', '),
       c.projectIds.map((id) => projectById.get(id)?.name).filter(Boolean).join(', '),
@@ -219,6 +225,7 @@ export function customersSheet(customers: Customer[], projectById: Map<string, P
       formatDate(c.nextFollowUp),
       c.nextFollowUpNote,
       c.interactions.length,
+      formatDate(lastContactAt(c)),
       c.notes,
       formatDate(c.createdAt),
     ]),

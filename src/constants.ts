@@ -442,6 +442,9 @@ export const CUSTOMER_SOURCE_LABEL: Record<CustomerSource, string> = {
   khac: 'Nguồn khác',
 };
 
+/** Nhãn / nhóm khách hay dùng. */
+export const CUSTOMER_TAG_SUGGESTIONS = ['VIP', 'Nhà đầu tư', 'Mua để ở', 'Khách cũ', 'Khách giới thiệu', 'Cần vay ngân hàng', 'Việt kiều'];
+
 export const PURPOSE_LABEL: Record<Purpose, string> = {
   o: 'Để ở',
   dau_tu: 'Đầu tư',
@@ -467,6 +470,7 @@ export const INTEREST_STATUSES = Object.keys(INTEREST_STATUS) as InterestStatus[
 export const INTERACTION_KIND_LABEL: Record<InteractionKind, string> = {
   goi_dien: 'Gọi điện',
   nhan_tin: 'Nhắn tin Zalo/SMS',
+  gui_email: 'Gửi email',
   gap_mat: 'Gặp mặt',
   dan_xem: 'Dẫn đi xem BĐS',
   gui_thong_tin: 'Gửi thông tin BĐS',

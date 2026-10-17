@@ -19,6 +19,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FieldGrid, useDraft } from '../components/form';
 import { ProvinceSelect } from '../components/inputs';
 import { MapDisplaySettings } from '../components/maps';
+import { MessageTemplatesCard } from '../components/messaging';
 import { Badge, Button, Card, CardHeader, Field, Modal, PageHeader, Segmented, TextInput } from '../components/ui';
 import { readBackup, createBackup, type BackupContent } from '../lib/backup';
 import { requestPersistentStorage, storageInfo } from '../lib/db';
@@ -37,6 +38,7 @@ export function Settings() {
       <PageHeader title="Cài đặt & Dữ liệu" subtitle="Cá nhân hoá, bảo mật khi đưa máy cho khách, sao lưu và chuyển dữ liệu sang máy khác." />
       <div className="space-y-5">
         <ProfileCard />
+        <MessageTemplatesCard />
         <PrivacyCard />
         <Card>
           <CardHeader title="Bản đồ mặt bằng" icon={MapIcon} description="Màu trạng thái căn, thông tin trên thẻ khi chạm vào căn, ẩn giá khi khách xem." />
