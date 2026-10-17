@@ -5,6 +5,7 @@ import {
   FURNISHING_LABEL,
   LEGAL_REFERENCE,
   LEGAL_STATUS,
+  MILESTONE_STATUS,
   PROJECT_STAGE,
   PROPERTY_TYPE_LABEL,
   propertyStatusLabel,
@@ -14,6 +15,7 @@ import { formatArea, formatDate, formatMoney, formatNumber, formatPrice } from '
 import { legalProgress, resolveChecklist } from './legal';
 import { formatPriceRange, formatProjectAddress } from './listing';
 import { mainArea } from './match';
+import { fmtPct, promotionActive, promotionValueText } from './pricing';
 
 /*
  * "Hỏi nhanh" — tìm đúng đoạn thông tin trong hồ sơ dự án cho câu hỏi tự nhiên của khách.
@@ -30,7 +32,7 @@ import { mainArea } from './match';
 
 // ======================================================================= Kiểu dữ liệu
 
-export type ProjectTab = 'tong-quan' | 'mat-bang' | 'phap-ly' | 'tai-lieu' | 'hinh-anh' | 'gio-hang' | 'khach' | 'noi-bo';
+export type ProjectTab = 'tong-quan' | 'mat-bang' | 'thanh-toan' | 'phap-ly' | 'tai-lieu' | 'hinh-anh' | 'gio-hang' | 'khach' | 'noi-bo';
 
 export type Topic =
   | 'gia'
@@ -1699,6 +1701,51 @@ export function buildProjectIndex(project: Project, units: Property[], options: 
     }
   }
 
+  // Thanh toán & ưu đãi (có cấu trúc, ở tab "Thanh toán & ưu đãi").
+  for (const x of p.sales.promotions) {
+    if ((privacy && x.internal) || !promotionActive(x)) continue;
+    add({
+      kind: 'line',
+      group: 'sales-promotions',
+      section: 'Thanh toán & ưu đãi',
+      title: 'Ưu đãi đang áp dụng',
+      text: [`${x.name}: ${promotionValueText(x)}`, x.condition, x.until && `áp dụng đến ${formatDate(x.until)}`].filter(Boolean).join(' — '),
+      topics: ['chinh_sach'],
+      internal: x.internal,
+      tab: 'thanh-toan',
+      anchor: `promo-${x.id}`,
+      reply: `ưu đãi đang áp dụng tại dự án ${p.name}`,
+    });
+  }
+  for (const m of p.sales.methods) {
+    const steps = m.installments.map((r, i) => `${r.label.trim() || `Đợt ${i + 1}`} ${fmtPct(r.pct)}${r.when ? ` ${r.when}` : ''}`).join('; ');
+    add({
+      kind: 'line',
+      group: 'sales-methods',
+      section: 'Thanh toán & ưu đãi',
+      title: 'Phương thức thanh toán',
+      text: `${m.name}${m.discountPct ? ` (chiết khấu ${fmtPct(m.discountPct)})` : ''}${steps ? `: ${steps}` : ''}${m.note ? `. ${m.note}` : ''}`,
+      topics: ['thanh_toan'],
+      tab: 'thanh-toan',
+      anchor: `pm-${m.id}`,
+      reply: `phương thức thanh toán của dự án ${p.name}`,
+    });
+  }
+  for (const m of p.sales.milestones) {
+    if (!m.label.trim()) continue;
+    add({
+      kind: 'line',
+      group: 'sales-progress',
+      section: 'Tiến độ dự án',
+      title: 'Tiến độ dự án',
+      text: `${m.label}${m.time ? ` ${m.time}` : ''} — ${MILESTONE_STATUS[m.status].label.toLowerCase()}${m.note ? `. ${m.note}` : ''}`,
+      topics: ['tien_do'],
+      tab: 'thanh-toan',
+      anchor: `ms-${m.id}`,
+      reply: `tiến độ dự án ${p.name}`,
+    });
+  }
+
   if (p.amenities.length) {
     add({
       kind: 'list',
@@ -2444,11 +2491,11 @@ export function replyFor(group: AnswerGroup, project: Project, q?: ParsedQuery):
 /** Câu hỏi gợi ý — chỉ những câu hồ sơ dự án đã có thông tin để trả lời. */
 const QUICK: Array<{ q: string; has: (p: Project, units: number) => boolean }> = [
   { q: 'Giá bao nhiêu?', has: (p) => !!(p.priceFrom || p.priceTo || p.unitPrice.trim() || p.unitTypes.some((u) => u.price.trim())) },
-  { q: 'Thanh toán thế nào?', has: (p) => !!p.paymentPlan.trim() },
+  { q: 'Thanh toán thế nào?', has: (p) => !!p.paymentPlan.trim() || p.sales.methods.length > 0 },
   { q: 'Vay ngân hàng được bao nhiêu?', has: (p) => !!p.banks.trim() },
   { q: 'Khi nào bàn giao?', has: (p) => !!p.handover.trim() },
   { q: 'Pháp lý thế nào?', has: (p) => !!(p.legalStatus.trim() || p.ownership.trim() || legalProgress(p).checked) },
-  { q: 'Đang có ưu đãi gì?', has: (p) => !!p.salesPolicy.trim() },
+  { q: 'Đang có ưu đãi gì?', has: (p) => !!p.salesPolicy.trim() || p.sales.promotions.some((x) => !x.internal && promotionActive(x)) },
   { q: 'Dự án ở đâu?', has: (p) => !!formatProjectAddress(p) },
   { q: 'Đi lại, kết nối thế nào?', has: (p) => !!(p.connectivity.trim() || p.nearby.length) },
   { q: 'Có những tiện ích gì?', has: (p) => p.amenities.length > 0 },
@@ -2457,7 +2504,7 @@ const QUICK: Array<{ q: string; has: (p: Project, units: number) => boolean }> =
   { q: 'Sở hữu bao lâu?', has: (p) => !!p.ownership.trim() },
   { q: 'Chủ đầu tư là ai?', has: (p) => !!p.developer.trim() },
   { q: 'Quy mô bao nhiêu căn?', has: (p) => !!(p.totalUnits || p.scale.trim()) },
-  { q: 'Tiến độ xây dựng tới đâu?', has: (p) => !!p.construction.trim() },
+  { q: 'Tiến độ xây dựng tới đâu?', has: (p) => !!p.construction.trim() || p.sales.milestones.length > 0 },
   { q: 'Còn căn nào đang bán?', has: (_p, n) => n > 0 },
 ];
 

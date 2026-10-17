@@ -26,15 +26,22 @@ import type {
   Customer,
   DocumentRef,
   FaqItem,
+  Installment,
   Interaction,
   Interest,
   InventoryItem,
   LegalItem,
   MapCardFields,
   MapUnit,
+  Milestone,
+  MilestoneStatus,
+  PaymentMethod,
   Project,
   ProjectMap,
+  Promotion,
+  PromotionKind,
   Property,
+  SalesTerms,
   SellerInfo,
   Settings,
   UnitTypeRow,
@@ -142,6 +149,7 @@ export function emptyProject(defaults: Partial<Project> = {}): Project {
     documents: [],
     maps: [],
     inventory: [],
+    sales: emptySales(),
     contacts: '',
     commission: '',
     infoSource: '',
@@ -379,6 +387,76 @@ function normalizeMap(raw: unknown): ProjectMap | null {
   };
 }
 
+export function emptySales(): SalesTerms {
+  return { methods: [], promotions: [], milestones: [], maintenancePct: 2, vatIncluded: true, compound: true };
+}
+
+const pctOf = (v: unknown, fallback = 0) => {
+  const n = num(v);
+  return n === undefined ? fallback : Math.min(100, Math.max(0, n));
+};
+const idOf = (v: unknown) => (typeof v === 'string' && v ? v : uid());
+const dateOf = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
+
+function normalizeInstallment(raw: unknown): Installment | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Loose<Installment>;
+  return { id: idOf(r.id), label: str(r.label), pct: pctOf(r.pct), when: str(r.when), date: dateOf(r.date) };
+}
+
+function normalizePaymentMethod(raw: unknown): PaymentMethod | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Loose<PaymentMethod>;
+  return {
+    id: idOf(r.id),
+    name: str(r.name, 'Phương thức thanh toán'),
+    discountPct: pctOf(r.discountPct),
+    installments: listOfObjects(r.installments, normalizeInstallment),
+    note: str(r.note),
+  };
+}
+
+const PROMOTION_KINDS: Record<PromotionKind, true> = { pct: true, amount: true, gift: true };
+const MILESTONE_STATUSES: Record<MilestoneStatus, true> = { done: true, doing: true, planned: true };
+
+function normalizePromotion(raw: unknown): Promotion | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Loose<Promotion>;
+  const kind = oneOf(PROMOTION_KINDS, r.kind, 'pct');
+  const value = Math.max(0, num(r.value) ?? 0);
+  return {
+    id: idOf(r.id),
+    name: str(r.name, 'Ưu đãi'),
+    kind,
+    value: kind === 'pct' ? Math.min(100, value) : value,
+    condition: str(r.condition),
+    until: dateOf(r.until),
+    auto: r.auto === true,
+    internal: r.internal === true,
+  };
+}
+
+function normalizeMilestone(raw: unknown): Milestone | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Loose<Milestone>;
+  return { id: idOf(r.id), label: str(r.label), time: str(r.time), status: oneOf(MILESTONE_STATUSES, r.status, 'planned'), note: str(r.note) };
+}
+
+function normalizeSales(raw: unknown): SalesTerms {
+  const base = emptySales();
+  if (!raw || typeof raw !== 'object') return base;
+  const r = raw as Loose<SalesTerms>;
+  const maintenance = num(r.maintenancePct);
+  return {
+    methods: listOfObjects(r.methods, normalizePaymentMethod),
+    promotions: listOfObjects(r.promotions, normalizePromotion),
+    milestones: listOfObjects(r.milestones, normalizeMilestone),
+    maintenancePct: maintenance === undefined ? base.maintenancePct : Math.min(10, Math.max(0, maintenance)),
+    vatIncluded: r.vatIncluded !== false,
+    compound: r.compound !== false,
+  };
+}
+
 function normalizeInventory(raw: unknown): InventoryItem | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Loose<InventoryItem>;
@@ -473,6 +551,7 @@ export function normalizeProject(raw: unknown): Project | null {
     documents: documents(r.documents, 'public'),
     maps: listOfObjects(r.maps, normalizeMap),
     inventory: listOfObjects(r.inventory, normalizeInventory),
+    sales: normalizeSales(r.sales),
     contacts: str(r.contacts),
     commission: str(r.commission),
     infoSource: str(r.infoSource),

@@ -1,5 +1,6 @@
-import type { Direction, InventoryItem, InventoryStatus, MapUnit, Project, ProjectMap, UnitTypeRow } from '../types';
+import type { Direction, InventoryItem, InventoryStatus, MapUnit, Project, ProjectMap, SalesTerms, UnitTypeRow } from '../types';
 import { emptyProject } from './defaults';
+import { todayStr } from './format';
 import { saveImage, saveImageSized } from './media';
 
 /*
@@ -378,6 +379,69 @@ export async function createSampleProject(): Promise<Project> {
     handover: 'Quý IV/2027 (minh hoạ)',
     maps: [map],
     inventory,
+    sales: sampleSales(),
     infoSource: 'Dữ liệu minh hoạ do ứng dụng tạo',
   });
+}
+
+function sampleSales(): SalesTerms {
+  const plan = (rows: Array<[string, number, string]>) => rows.map(([label, pct, when], i) => ({ id: `mau-dot-${i}-${pct}-${label}`, label, pct, when, date: '' }));
+  return {
+    methods: [
+      {
+        id: 'mau-tt-chuan',
+        name: 'Thanh toán chuẩn theo tiến độ',
+        discountPct: 0,
+        note: '',
+        installments: plan([
+          ['Đợt 1', 15, 'Ký hợp đồng mua bán'],
+          ['Đợt 2', 10, 'Sau 2 tháng'],
+          ['Đợt 3', 10, 'Sau 4 tháng'],
+          ['Đợt 4', 10, 'Sau 6 tháng'],
+          ['Đợt 5', 10, 'Sau 8 tháng'],
+          ['Đợt 6', 40, 'Nhận bàn giao'],
+          ['Đợt 7', 5, 'Nhận sổ hồng'],
+        ]),
+      },
+      {
+        id: 'mau-tt-som',
+        name: 'Thanh toán sớm 95%',
+        discountPct: 9,
+        note: 'Chiết khấu trừ thẳng vào giá bán (minh hoạ).',
+        installments: plan([
+          ['Đợt 1', 30, 'Ký hợp đồng mua bán'],
+          ['Đợt 2', 65, 'Sau 30 ngày'],
+          ['Đợt 3', 5, 'Nhận sổ hồng'],
+        ]),
+      },
+      {
+        id: 'mau-tt-vay',
+        name: 'Vay ngân hàng 65%',
+        discountPct: 0,
+        note: 'Hỗ trợ lãi suất 0% trong 18 tháng, ân hạn nợ gốc 24 tháng (minh hoạ).',
+        installments: plan([
+          ['Đợt 1', 15, 'Ký hợp đồng mua bán'],
+          ['Đợt 2', 15, 'Sau 30 ngày'],
+          ['Đợt 3', 65, 'Ngân hàng giải ngân'],
+          ['Đợt 4', 5, 'Nhận sổ hồng'],
+        ]),
+      },
+    ],
+    promotions: [
+      { id: 'mau-km-som', name: 'Chiết khấu mua sớm', kind: 'pct', value: 2, condition: 'Ký HĐMB trong đợt mở bán (minh hoạ)', until: todayStr(45), auto: true, internal: false },
+      { id: 'mau-km-than-thiet', name: 'Khách hàng thân thiết', kind: 'pct', value: 1, condition: 'Khách đã mua sản phẩm khác của CĐT', until: '', auto: false, internal: false },
+      { id: 'mau-km-noi-that', name: 'Tặng gói nội thất', kind: 'gift', value: 80_000_000, condition: 'Áp dụng căn 3PN', until: '', auto: false, internal: false },
+      { id: 'mau-km-mg', name: 'Chiết khấu thêm từ môi giới', kind: 'amount', value: 20_000_000, condition: 'Trích từ hoa hồng — chỉ nội bộ', until: '', auto: false, internal: true },
+    ],
+    milestones: [
+      { id: 'mau-ms-1', label: 'Khởi công', time: '03/2024', status: 'done', note: '' },
+      { id: 'mau-ms-2', label: 'Hoàn thiện móng', time: '11/2024', status: 'done', note: '' },
+      { id: 'mau-ms-3', label: 'Cất nóc', time: '06/2026', status: 'doing', note: 'Đang thi công tầng 22/25 (minh hoạ)' },
+      { id: 'mau-ms-4', label: 'Bàn giao', time: 'Quý IV/2027', status: 'planned', note: '' },
+      { id: 'mau-ms-5', label: 'Cấp sổ hồng', time: '2028', status: 'planned', note: '' },
+    ],
+    maintenancePct: 2,
+    vatIncluded: true,
+    compound: true,
+  };
 }

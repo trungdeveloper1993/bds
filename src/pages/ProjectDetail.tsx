@@ -37,6 +37,7 @@ import { MapsTab } from '../components/maps';
 import { DropZone, Gallery, ImageManager, ImageView, Lightbox, useImageUpload } from '../components/media';
 import { FaqList, LegalChecklist, LegalReferenceCard, legalProgress, ProjectStageBadge, PublicFaqCard, UnitTypesTable } from '../components/project';
 import { PropertyRow } from '../components/property';
+import { SalesTab } from '../components/sales';
 import { ShareTextModal } from '../components/share';
 import { ProjectSmartFind } from '../components/smartfind';
 import {
@@ -66,6 +67,7 @@ import {
 import { requestFocus } from '../lib/focus';
 import { formatDateTime, formatNumber, relativeDay } from '../lib/format';
 import { buildProjectText, formatPriceRange, formatProjectAddress } from '../lib/listing';
+import { fmtPct, promotionActive, promotionValueText } from '../lib/pricing';
 import { navigate, useLocation } from '../lib/router';
 import { textLines, type ProjectTab } from '../lib/smartfind';
 import { SAMPLE_PROJECT_ID } from '../lib/sample';
@@ -133,6 +135,7 @@ export function ProjectDetail({ id }: { id: string }) {
   const tabs: Array<{ value: TabKey; label: string; count?: number; hidden?: boolean }> = [
     { value: 'tong-quan', label: 'Tổng quan' },
     { value: 'mat-bang', label: 'Mặt bằng', count: p.maps.length },
+    { value: 'thanh-toan', label: 'Thanh toán & ưu đãi' },
     { value: 'phap-ly', label: 'Pháp lý', count: legal.done },
     { value: 'tai-lieu', label: 'Tài liệu', count: visibleDocs.filter((d) => !d.archived).length },
     { value: 'hinh-anh', label: 'Hình ảnh', count: p.images.length },
@@ -236,10 +239,12 @@ export function ProjectDetail({ id }: { id: string }) {
       </div>
 
       {tab === 'tong-quan' && (
-        <OverviewTab project={p} editable={editable} privacy={privacy} onAddImages={() => setTab('hinh-anh')} />
+        <OverviewTab project={p} editable={editable} privacy={privacy} onAddImages={() => setTab('hinh-anh')} onOpenSales={() => setTab('thanh-toan')} />
       )}
 
       {tab === 'mat-bang' && <MapsTab project={p} units={units} editable={editable} privacy={privacy} />}
+
+      {tab === 'thanh-toan' && <SalesTab project={p} units={units} editable={editable} privacy={privacy} />}
 
       {tab === 'phap-ly' && (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -373,11 +378,25 @@ function TextBlock({ title, icon, text, field, tone }: { title: string; icon: Lu
   );
 }
 
-function OverviewTab({ project: p, editable, privacy, onAddImages }: { project: Project; editable: boolean; privacy: boolean; onAddImages: () => void }) {
+function OverviewTab({
+  project: p,
+  editable,
+  privacy,
+  onAddImages,
+  onOpenSales,
+}: {
+  project: Project;
+  editable: boolean;
+  privacy: boolean;
+  onAddImages: () => void;
+  onOpenSales: () => void;
+}) {
   const highlights = textLines(p.highlights);
+  const promos = p.sales.promotions.filter((x) => promotionActive(x) && !(privacy && x.internal));
   const hasFacts =
     p.legalName || p.devPartner || p.contractor || p.designer || p.operator || p.distributor || p.siteArea || p.density || p.scale || p.totalUnits || p.unitAreaRange;
-  const empty = !p.description && !highlights.length && !hasFacts && !p.unitTypes.length && !p.paymentPlan && !p.banks && !p.salesPolicy;
+  const empty =
+    !p.description && !highlights.length && !hasFacts && !p.unitTypes.length && !p.paymentPlan && !p.banks && !p.salesPolicy && !promos.length && !p.sales.methods.length;
 
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -483,10 +502,44 @@ function OverviewTab({ project: p, editable, privacy, onAddImages }: { project: 
           </Card>
         )}
 
-        {(p.paymentPlan || p.banks || p.salesPolicy) && (
+        {(p.paymentPlan || p.banks || p.salesPolicy || promos.length > 0 || p.sales.methods.length > 0) && (
           <Card>
-            <CardHeader title="Thanh toán & chính sách" icon={HandCoins} />
+            <CardHeader
+              title="Thanh toán & chính sách"
+              icon={HandCoins}
+              actions={
+                <button type="button" onClick={onOpenSales} className="text-xs font-semibold text-brand-700 hover:underline">
+                  Chi tiết & tính giá →
+                </button>
+              }
+            />
             <div className="divide-y divide-slate-100">
+              {promos.length > 0 && (
+                <div className="px-4 py-3 sm:px-5">
+                  <div className="mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-400">Ưu đãi đang áp dụng</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {promos.map((x) => (
+                      <Badge key={x.id} tone={x.kind === 'gift' ? 'violet' : 'emerald'}>
+                        {promotionValueText(x)} · {x.name}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {p.sales.methods.length > 0 && (
+                <div className="px-4 py-3 sm:px-5">
+                  <div className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-400">Phương thức thanh toán</div>
+                  <ul className="space-y-0.5 text-sm text-slate-700">
+                    {p.sales.methods.map((m) => (
+                      <li key={m.id}>
+                        • <b className="font-semibold text-slate-900">{m.name}</b>
+                        {m.discountPct > 0 && <span className="text-emerald-700"> — chiết khấu {fmtPct(m.discountPct)}</span>}
+                        {m.installments.length > 0 && <span className="text-slate-500"> · {m.installments.length} đợt</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {p.paymentPlan && <TextRow label="Phương thức thanh toán" text={p.paymentPlan} field="paymentPlan" />}
               {p.banks && <TextRow label="Ngân hàng bảo lãnh / cho vay" text={p.banks} field="banks" />}
               {p.salesPolicy && <TextRow label="Chính sách bán hàng" text={p.salesPolicy} field="salesPolicy" />}
