@@ -14,8 +14,9 @@ import {
   type ColumnMap,
   type InventoryField,
 } from '../lib/inventory';
-import { guessLayout, layoutFinder, setAssignments } from '../lib/layouts';
+import { applyToPosition, guessLayout, layoutFinder, positionCodes, setAssignments } from '../lib/layouts';
 import {
+  buildLocator,
   compareCodes,
   indexByCode,
   normCode,
@@ -35,7 +36,7 @@ import { useUI } from '../store/ui';
 import type { Direction, InventoryItem, InventoryStatus, Project, UnitLayout, UnitTypeRow } from '../types';
 import { EnumSelect, MoneyInput, NumberInput } from './inputs';
 import { ColorDot } from './mapcanvas';
-import { Badge, Button, Card, CardHeader, cn, Dropdown, EmptyState, Field, IconButton, Modal, SearchInput, Select, TextArea, TextInput, Toggle } from './ui';
+import { Badge, Button, Card, CardHeader, cn, Dropdown, EmptyState, Field, IconButton, Modal, SearchInput, Segmented, Select, TextArea, TextInput, Toggle } from './ui';
 
 /*
  * Bảng hàng của dự án: mọi căn theo mã căn (loại, diện tích, giá, hướng, trạng thái).
@@ -765,10 +766,20 @@ export function InventoryItemModal({ project, code, open, onClose }: { project: 
   const { toast, confirm } = useUI();
   const existing = useMemo(() => (code ? indexByCode(project.inventory, (x) => x.code).get(code) : undefined), [project.inventory, code]);
   const [draft, setDraft] = useState<InventoryItem>(() => existing ?? { code, status: 'dang_ban', note: '', updatedAt: '' });
-  const [layoutId, setLayoutId] = useState(() => (code ? (indexByCode(project.layoutAssignments, (a) => a.code).get(code)?.layoutId ?? '') : ''));
   const [saving, setSaving] = useState(false);
   const set = (patch: Partial<InventoryItem>) => setDraft((d) => ({ ...d, ...patch }));
-  const positionLayout = project.layouts.find((l) => l.id === positionOf(project.maps, draft.code)?.layoutId);
+
+  // Hình mẫu: mặc định đổi cho cả ô trên mặt bằng (mọi căn cùng vị trí ở các tầng), "Chỉ căn này" cho căn ngoại lệ.
+  const own = useMemo(() => (code ? indexByCode(project.layoutAssignments, (a) => a.code).get(code)?.layoutId : undefined), [project.layoutAssignments, code]);
+  const loc = useMemo(() => buildLocator(project.maps).get(draft.code), [project.maps, draft.code]);
+  const posMap = loc ? project.maps.find((m) => m.id === loc.mapId) : undefined;
+  const posUnit = loc ? posMap?.units.find((u) => u.id === loc.unitId) : undefined;
+  const posCodes = posMap && posUnit ? positionCodes(posMap, posUnit) : [];
+  const positionLayout = project.layouts.find((l) => l.id === posUnit?.layoutId);
+  const [layoutId, setLayoutId] = useState(() => own ?? positionLayout?.id ?? '');
+  const [layoutScope, setLayoutScope] = useState<'position' | 'code'>(() => (posUnit ? 'position' : 'code'));
+  const [layoutTouched, setLayoutTouched] = useState(false);
+  const scope = posUnit ? layoutScope : 'code';
 
   const save = async () => {
     const next: InventoryItem = { ...draft, code: draft.code.trim(), note: draft.note.trim(), updatedAt: new Date().toISOString() };
@@ -780,15 +791,24 @@ export function InventoryItemModal({ project, code, open, onClose }: { project: 
         const original = existing ? index.get(existing.code) : undefined;
         const clash = index.get(next.code);
         if (clash && clash !== original) throw new Error(`Mã ${next.code} đã có trong bảng hàng.`);
-        // Hình mẫu riêng của căn (đổi mã căn thì chuyển theo); trùng hình mẫu theo ô thì khỏi gắn riêng.
-        const own = layoutId && layoutId !== positionOf(cur.maps, next.code)?.layoutId ? layoutId : undefined;
-        const renamed = existing && normCode(existing.code) !== normCode(next.code) ? [{ code: existing.code }] : [];
-        return {
-          inventory: original ? cur.inventory.map((x) => (x === original ? next : x)) : [...cur.inventory, next],
-          layoutAssignments: setAssignments(cur.layoutAssignments, [...renamed, { code: next.code, layoutId: own }]),
-        };
+        const inventory = original ? cur.inventory.map((x) => (x === original ? next : x)) : [...cur.inventory, next];
+        // Đổi mã căn: hình mẫu riêng chuyển theo mã mới.
+        const renamed = !!existing && normCode(existing.code) !== normCode(next.code);
+        const moved = setAssignments(cur.layoutAssignments, renamed ? [{ code: existing.code }, ...(!layoutTouched && own ? [{ code: next.code, layoutId: own }] : [])] : []);
+        if (!layoutTouched) return { inventory, layoutAssignments: moved };
+        if (scope === 'position' && posMap && posUnit) {
+          return { inventory, ...applyToPosition({ maps: cur.maps, layoutAssignments: moved }, posMap.id, [posUnit.id], layoutId || undefined) };
+        }
+        // Chỉ căn này: trùng hình mẫu theo ô thì khỏi gắn riêng.
+        const ownNext = layoutId && layoutId !== positionOf(cur.maps, next.code)?.layoutId ? layoutId : undefined;
+        return { inventory, layoutAssignments: setAssignments(moved, [{ code: next.code, layoutId: ownNext }]) };
       });
-      toast(`Đã lưu căn ${next.code}`);
+      const layoutCode = project.layouts.find((l) => l.id === layoutId)?.code;
+      toast(
+        layoutTouched && scope === 'position' && posCodes.length > 1
+          ? `Đã lưu căn ${next.code} · ${layoutCode ? `hình mẫu ${layoutCode}` : 'bỏ hình mẫu'} cho ${posCodes.length} căn cùng vị trí`
+          : `Đã lưu căn ${next.code}`,
+      );
       onClose();
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), 'error');
@@ -852,15 +872,45 @@ export function InventoryItemModal({ project, code, open, onClose }: { project: 
             <EnumSelect<Direction> value={draft.direction} onChange={(direction) => set({ direction })} labels={DIRECTION_LABEL} placeholder="— Chưa rõ —" />
           </Field>
           {project.layouts.length > 0 && (
-            <Field label="Hình mẫu" hint="Căn góc, căn giữa… — khách chạm vào căn thấy đúng hình mẫu này.">
-              <Select value={layoutId} onChange={(e) => setLayoutId(e.target.value)} aria-label="Hình mẫu">
-                <option value="">{positionLayout ? `Theo ô trên mặt bằng (${positionLayout.code})` : '— Chưa gắn —'}</option>
+            <Field
+              label="Hình mẫu"
+              className="sm:col-span-2"
+              hint={
+                scope === 'position'
+                  ? 'Mọi căn cùng vị trí ở các tầng dùng chung hình mẫu này (kể cả căn đang gắn riêng).'
+                  : 'Chỉ đổi căn này — cho căn khác mẫu với các tầng còn lại (VD tầng trên cùng có sân vườn).'
+              }
+            >
+              <Select
+                value={layoutId}
+                onChange={(e) => {
+                  setLayoutId(e.target.value);
+                  setLayoutTouched(true);
+                }}
+                aria-label="Hình mẫu"
+              >
+                <option value="">{scope === 'code' && positionLayout ? `Theo ô trên mặt bằng (${positionLayout.code})` : '— Không gắn hình mẫu —'}</option>
                 {project.layouts.map((l) => (
                   <option key={l.id} value={l.id}>
                     {`${l.code}${l.tags.length ? ` · ${l.tags.join(', ')}` : ''}`}
                   </option>
                 ))}
               </Select>
+              {posUnit && posCodes.length > 1 && (
+                <Segmented
+                  size="sm"
+                  className="mt-2"
+                  value={layoutScope}
+                  onChange={(s) => {
+                    setLayoutScope(s);
+                    setLayoutTouched(true);
+                  }}
+                  options={[
+                    { value: 'position', label: `Ô ${posUnit.label.trim()} – mọi tầng (${posCodes.length} căn)` },
+                    { value: 'code', label: 'Chỉ căn này' },
+                  ]}
+                />
+              )}
             </Field>
           )}
         </div>

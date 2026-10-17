@@ -25,7 +25,7 @@ import { requestFocus } from '../lib/focus';
 import { formatArea, formatMoney, formatNumber, formatUnitPrice } from '../lib/format';
 import { uid } from '../lib/id';
 import { upsertItem } from '../lib/inventory';
-import { setAssignments, withPositionLayout } from '../lib/layouts';
+import { applyToPosition, positionCodes, setAssignments } from '../lib/layouts';
 import { copyText } from '../lib/listing';
 import {
   buildLocator,
@@ -1155,19 +1155,22 @@ function UnitDetails({
   );
 }
 
-/** Gắn hình mẫu cho căn đang chọn: cho ô này ở mọi tầng (mặt bằng tầng điển hình), hoặc riêng căn này. */
+/**
+ * Gắn / đổi hình mẫu cho căn đang chọn. Mặc định áp dụng cho ô này ở mọi tầng — mọi căn cùng vị trí dùng chung
+ * hình mẫu mới, kể cả căn đang gắn riêng; "Chỉ căn này" dành cho căn ngoại lệ (VD tầng trên cùng có sân vườn).
+ */
 function UnitLayoutPicker({ project, map, r, onClose }: { project: Project; map: ProjectMap; r: ResolvedUnit; onClose: () => void }) {
   const { patchProject } = useData();
   const { toast } = useUI();
-  const [replaceOthers, setReplaceOthers] = useState(false);
-  const floors = floorList(map);
+  const [keepOthers, setKeepOthers] = useState(false);
   const label = r.unit.label.trim();
-  const codes = floors.length ? floors.map((f) => unitCode(map, label, f)) : [r.code];
+  const codes = positionCodes(map, r.unit);
   const assigned = indexByCode(project.layoutAssignments, (a) => a.code);
-  // Các căn khác cùng ô đang gắn hình mẫu riêng (VD tầng trên cùng): mặc định giữ nguyên.
+  // Các căn khác cùng ô đang gắn hình mẫu riêng: mặc định đổi theo luôn, tích "giữ" nếu muốn để nguyên.
   const others = codes.filter((c) => normCode(c) !== normCode(r.code) && assigned.get(c));
   const positionLayout = project.layouts.find((l) => l.id === r.unit.layoutId);
   const codeOf = (id?: string) => project.layouts.find((l) => l.id === id)?.code ?? '';
+  const list = (xs: string[]) => `${xs.slice(0, 3).join(', ')}${xs.length > 3 ? '…' : ''}`;
 
   const apply = async (layoutId: string | undefined, scope: string) => {
     if (scope === 'code') {
@@ -1177,12 +1180,8 @@ function UnitLayoutPicker({ project, map, r, onClose }: { project: Project; map:
       toast(layoutId ? `Căn ${r.code}: hình mẫu ${codeOf(layoutId)}` : `Căn ${r.code} dùng hình mẫu theo ô trên mặt bằng`);
       return;
     }
-    const clear = [r.code, ...(replaceOthers ? others : [])].map((code) => ({ code, layoutId: undefined }));
-    await patchProject(project.id, (cur) => ({
-      maps: withPositionLayout(cur.maps, map.id, [r.unit.id], layoutId),
-      layoutAssignments: setAssignments(cur.layoutAssignments, clear),
-    }));
-    toast(layoutId ? `Ô ${label}: hình mẫu ${codeOf(layoutId)}${floors.length ? ` cho ${codes.length} căn` : ''}` : `Đã bỏ hình mẫu của ô ${label}`);
+    await patchProject(project.id, (cur) => applyToPosition(cur, map.id, [r.unit.id], layoutId, keepOthers ? others : []));
+    toast(layoutId ? `Ô ${label}: hình mẫu ${codeOf(layoutId)}${codes.length > 1 ? ` cho ${codes.length} căn` : ''}` : `Đã bỏ hình mẫu của ô ${label}`);
   };
 
   return (
@@ -1192,24 +1191,24 @@ function UnitLayoutPicker({ project, map, r, onClose }: { project: Project; map:
       description="Chọn đúng hình mẫu của căn này (căn góc, căn giữa…), hoặc tải hình mẫu mới ngay tại đây."
       current={r.layout?.id}
       scopes={
-        floors.length
+        codes.length > 1
           ? [
-              { value: 'position', label: `Ô ${label} – mọi tầng`, hint: `Áp dụng cho ${codes.length} căn ${codes[codes.length - 1]} … ${codes[0]}.` },
+              {
+                value: 'position',
+                label: `Ô ${label} – mọi tầng`,
+                hint: `Mọi căn cùng vị trí dùng chung hình mẫu: ${codes.length} căn ${codes[codes.length - 1]} … ${codes[0]}${
+                  others.length && !keepOthers ? `, kể cả ${others.length} căn đang gắn riêng` : ''
+                }.`,
+              },
               { value: 'code', label: `Chỉ căn ${r.code}`, hint: 'Cho căn khác mẫu với các tầng còn lại (VD tầng trên cùng có sân vườn, căn thông tầng).' },
             ]
           : undefined
       }
-      initialScope={r.layoutFrom === 'code' ? 'code' : 'position'}
+      initialScope="position"
       clearLabel={(scope) => (scope === 'code' ? (positionLayout ? `Theo ô trên mặt bằng (${positionLayout.code})` : 'Không gắn riêng') : 'Không gắn hình mẫu')}
       extra={(scope) =>
         scope === 'position' &&
-        others.length > 0 && (
-          <Checkbox
-            checked={replaceOthers}
-            onChange={setReplaceOthers}
-            label={`Áp dụng cả cho ${others.length} căn đang gắn hình mẫu riêng (${others.slice(0, 3).join(', ')}${others.length > 3 ? '…' : ''})`}
-          />
-        )
+        others.length > 0 && <Checkbox checked={keepOthers} onChange={setKeepOthers} label={`Giữ hình mẫu riêng của ${others.length} căn khác (${list(others)})`} />
       }
       onApply={apply}
       onClose={onClose}

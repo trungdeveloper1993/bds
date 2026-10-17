@@ -34,6 +34,7 @@ import { mapSetupDraft, MapSetupFields, parseMapSetup, useMedia, type MapSetupDr
 import { ImageView } from '../components/media';
 import { Button, Checkbox, cn, Field, IconButton, Modal, Segmented, Select, TextInput, Toggle } from '../components/ui';
 import { uid } from '../lib/id';
+import { positionCodes, setAssignments } from '../lib/layouts';
 import {
   bbox,
   centroid,
@@ -589,8 +590,13 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
         units: current.units.map((u) => ({ ...u, label: u.label.trim(), points: u.points.map((v) => Math.round(v * 1e5) / 1e5) })),
         updatedAt: new Date().toISOString(),
       };
+      // Ô đổi hình mẫu: mọi căn cùng vị trí ở các tầng dùng chung hình mẫu mới, kể cả căn đang gắn riêng.
+      const before = new Map(saved.current.units.map((u) => [u.id, u.layoutId]));
+      const changed = next.units.filter((u) => before.has(u.id) && before.get(u.id) !== u.layoutId);
+      const clear = changed.flatMap((u) => positionCodes(next, u)).map((code) => ({ code }));
       await patchProject(project.id, (cur) => ({
         maps: cur.maps.some((m) => m.id === next.id) ? cur.maps.map((m) => (m.id === next.id ? next : m)) : [...cur.maps, next],
+        ...(clear.length ? { layoutAssignments: setAssignments(cur.layoutAssignments, clear) } : {}),
       }));
       saved.current = next;
       put(next);
@@ -1074,7 +1080,7 @@ function Editor({ project, initial }: { project: Project; initial: ProjectMap })
           title={single ? `Gắn hình mẫu cho ô ${single.label.trim() || 'chưa đánh số'}` : `Gắn hình mẫu cho ${selected.length} ô`}
           description={
             floors.length
-              ? `Áp dụng cho ${selected.length > 1 ? 'các ô đã chọn' : 'ô này'} ở mọi tầng (${floors.length} tầng). Căn nào khác mẫu thì gắn riêng trên thẻ căn ở tab Mặt bằng.`
+              ? `Mọi căn cùng vị trí ở ${floors.length} tầng dùng chung hình mẫu này (kể cả căn đang gắn riêng). Căn nào khác mẫu thì gắn riêng trên thẻ căn ở tab Mặt bằng.`
               : 'Áp dụng cho các ô đã chọn.'
           }
           current={(() => {
@@ -1406,7 +1412,11 @@ function SelectionPanel({
           {single && current ? 'Đổi hình mẫu' : count > 1 ? `Gắn hình mẫu cho ${count} ô` : 'Gắn hình mẫu'}
         </Button>
         {floors.length > 0 && <p className="mt-1.5 text-xs text-slate-400">Áp dụng cho {count > 1 ? 'các ô này' : 'ô này'} ở mọi tầng.</p>}
-        {overrides > 0 && <p className="mt-1 text-xs text-amber-700">{overrides} căn ở {count > 1 ? 'các ô này' : 'ô này'} đã gắn hình mẫu riêng — vẫn giữ (ưu tiên hơn hình mẫu theo ô).</p>}
+        {overrides > 0 && (
+          <p className="mt-1 text-xs text-amber-700">
+            {overrides} căn ở {count > 1 ? 'các ô này' : 'ô này'} đang gắn hình mẫu riêng — đổi hình mẫu của ô thì các căn đó cũng đổi theo.
+          </p>
+        )}
       </PanelSection>
       <PanelSection title="Thao tác">
         <div className="grid grid-cols-2 gap-2">
