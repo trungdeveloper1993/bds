@@ -12,6 +12,8 @@ import type {
   InteractionKind,
   InventoryStatus,
   MapCardFields,
+  MilestoneStatus,
+  PromotionKind,
   InterestStatus,
   LegalStatus,
   Payment,
@@ -238,6 +240,15 @@ export const INVENTORY_STATUS: Record<InventoryStatus, LabelTone & { color: stri
 export const INVENTORY_STATUSES: InventoryStatus[] = ['dang_ban', 'giu_cho', 'da_coc', 'da_ban', 'chua_mo'];
 
 export const DEFAULT_MAP_COLORS = Object.fromEntries(INVENTORY_STATUSES.map((s) => [s, INVENTORY_STATUS[s].color])) as Record<InventoryStatus, string>;
+
+export const PROMOTION_KIND_LABEL: Record<PromotionKind, string> = { pct: 'Giảm %', amount: 'Giảm tiền', gift: 'Quà tặng' };
+
+export const MILESTONE_STATUS: Record<MilestoneStatus, LabelTone> = {
+  done: { label: 'Đã xong', tone: 'emerald' },
+  doing: { label: 'Đang thực hiện', tone: 'amber' },
+  planned: { label: 'Sắp tới', tone: 'slate' },
+};
+export const MILESTONE_SUGGESTIONS = ['Khởi công', 'Hoàn thiện móng', 'Cất nóc', 'Bàn giao', 'Cấp sổ hồng'];
 
 export const MAP_CARD_FIELDS: Array<{ key: keyof MapCardFields; label: string }> = [
   { key: 'image', label: 'Hình mẫu căn' },

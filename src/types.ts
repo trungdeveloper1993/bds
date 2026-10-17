@@ -120,6 +120,74 @@ export interface ProjectMap {
   updatedAt: string;
 }
 
+/** Một đợt thanh toán của phương thức thanh toán. */
+export interface Installment {
+  id: string;
+  /** "Đợt 1", "Ký HĐMB"… */
+  label: string;
+  /** % giá trị căn (giá sau chiết khấu). */
+  pct: number;
+  /** Thời điểm: "Ký HĐMB", "Sau 30 ngày", "Nhận bàn giao", "Nhận sổ hồng"… */
+  when: string;
+  /** Ngày cụ thể (YYYY-MM-DD), '' nếu tính theo mốc. */
+  date: string;
+}
+
+/** Phương thức thanh toán: chuẩn theo tiến độ, thanh toán sớm, vay ngân hàng… */
+export interface PaymentMethod {
+  id: string;
+  name: string;
+  /** Chiết khấu riêng của phương thức (%), VD thanh toán sớm chiết khấu 9%. */
+  discountPct: number;
+  installments: Installment[];
+  /** Điều kiện, hỗ trợ lãi suất, ân hạn nợ gốc… */
+  note: string;
+}
+
+export type PromotionKind = 'pct' | 'amount' | 'gift';
+
+/** Ưu đãi / chiết khấu đang áp dụng. */
+export interface Promotion {
+  id: string;
+  name: string;
+  kind: PromotionKind;
+  /** % (giảm %), VND (giảm tiền) hoặc giá trị quà tặng (VND, chỉ để tham khảo — không trừ vào giá). */
+  value: number;
+  /** Điều kiện áp dụng. */
+  condition: string;
+  /** Hạn áp dụng (YYYY-MM-DD), '' = chưa có hạn. */
+  until: string;
+  /** Chọn sẵn khi tính giá (ưu đãi khách nào cũng được). */
+  auto: boolean;
+  /** Chỉ nội bộ (VD chiết khấu thêm trích từ hoa hồng): ẩn khi khách xem. */
+  internal: boolean;
+}
+
+export type MilestoneStatus = 'done' | 'doing' | 'planned';
+
+/** Mốc tiến độ dự án (khởi công, cất nóc, bàn giao, cấp sổ…). */
+export interface Milestone {
+  id: string;
+  label: string;
+  /** "03/2024", "Quý IV/2027"… */
+  time: string;
+  status: MilestoneStatus;
+  note: string;
+}
+
+/** Thanh toán, ưu đãi, tiến độ — có cấu trúc để tính giá & lịch thanh toán cho khách. */
+export interface SalesTerms {
+  methods: PaymentMethod[];
+  promotions: Promotion[];
+  milestones: Milestone[];
+  /** Phí bảo trì (% giá bán chưa VAT), thường 2%; 0 = không tính. */
+  maintenancePct: number;
+  /** Giá niêm yết đã gồm VAT. */
+  vatIncluded: boolean;
+  /** Chiết khấu sau tính trên giá đã giảm (true) hay cộng tổng % rồi trừ một lần (false). */
+  compound: boolean;
+}
+
 export interface FaqItem {
   id: string;
   question: string;
@@ -218,6 +286,8 @@ export interface Project {
   maps: ProjectMap[];
   /** Bảng hàng: toàn bộ căn của dự án theo mã căn (giá, diện tích, trạng thái). */
   inventory: InventoryItem[];
+  /** Phương thức & tiến độ thanh toán, ưu đãi, mốc tiến độ dự án. */
+  sales: SalesTerms;
 
   // Nội bộ
   /** Danh bạ đầu mối (admin CĐT/F1, ngân hàng). */

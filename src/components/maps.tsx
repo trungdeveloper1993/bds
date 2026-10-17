@@ -1,4 +1,5 @@
 import {
+  Calculator,
   Copy,
   ChevronDown,
   ChevronUp,
@@ -1034,6 +1035,11 @@ function UnitDetails({
         {r.code && (
           <Button size="sm" icon={Copy} onClick={() => void copy()}>
             Copy gửi khách
+          </Button>
+        )}
+        {r.code && !hidePrice && (r.price || r.item) && (
+          <Button size="sm" icon={Calculator} onClick={() => navigate(`/du-an/${project.id}?tab=thanh-toan&tinh=${encodeURIComponent(r.code)}`)}>
+            Tính dòng tiền
           </Button>
         )}
         {onShowOnMap && (
