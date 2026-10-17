@@ -68,6 +68,7 @@ import { formatDateTime, formatNumber, relativeDay } from '../lib/format';
 import { buildProjectText, formatPriceRange, formatProjectAddress } from '../lib/listing';
 import { navigate, useLocation } from '../lib/router';
 import { textLines, type ProjectTab } from '../lib/smartfind';
+import { SAMPLE_PROJECT_ID } from '../lib/sample';
 import { needsSummary } from '../lib/summary';
 import { useData } from '../store/data';
 import { useUI } from '../store/ui';
@@ -198,6 +199,20 @@ export function ProjectDetail({ id }: { id: string }) {
           </>
         }
       />
+
+      {p.id === SAMPLE_PROJECT_ID && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-950 ring-1 ring-inset ring-amber-200">
+          <Sparkles size={18} className="shrink-0 text-amber-600" />
+          <span className="min-w-0 flex-1">
+            Đây là <b>dự án mẫu</b> để xem thử bản đồ mặt bằng & bảng hàng — mọi thông tin đều là minh hoạ, không phải dữ liệu thật.
+          </span>
+          {editable && (
+            <Button size="sm" variant="ghost" icon={Trash2} onClick={() => void remove()}>
+              Xoá dự án mẫu
+            </Button>
+          )}
+        </div>
+      )}
 
       {p.images.length > 0 && (
         <div className="mb-4">

@@ -12,6 +12,7 @@ import {
   Pencil,
   Plus,
   Settings2,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
@@ -40,6 +41,7 @@ import {
 } from '../lib/maps';
 import { deleteImages, isImageFile, saveImage, saveImageSized } from '../lib/media';
 import { navigate, useLocation } from '../lib/router';
+import { createSampleProject, SAMPLE_PROJECT_ID } from '../lib/sample';
 import { useData } from '../store/data';
 import { useUI } from '../store/ui';
 import type { CodeRule, InventoryStatus, MapColorBy, Project, ProjectMap, Property, Settings } from '../types';
@@ -145,7 +147,7 @@ export function MapsTab({ project, units, editable, privacy }: { project: Projec
           onCreate={() => setCreateOpen(true)}
         />
       ) : (
-        <NoMapsCard editable={editable} onCreate={() => setCreateOpen(true)} />
+        <NoMapsCard project={project} editable={editable} onCreate={() => setCreateOpen(true)} />
       )}
       <InventoryPanel project={project} ctx={ctx} locator={locator} editable={editable} privacy={privacy} hidePrice={hidePrice} onLocate={(code) => go({ bd: map?.id, can: code })} />
       {editable && <MapCreateModal project={project} open={createOpen} onClose={() => setCreateOpen(false)} />}
@@ -159,7 +161,35 @@ const STEPS = [
   { title: 'Nhập bảng hàng', text: 'Dán bảng hàng từ Excel / Google Sheets — giá, diện tích, trạng thái tự khớp vào bản đồ theo mã căn.' },
 ];
 
-function NoMapsCard({ editable, onCreate }: { editable: boolean; onCreate: () => void }) {
+/** Mở dự án mẫu (tạo mới nếu chưa có) để xem thử bản đồ & bảng hàng. */
+export function useSampleProject() {
+  const { projectById, saveProject } = useData();
+  const { toast } = useUI();
+  const [busy, setBusy] = useState(false);
+  const exists = projectById.has(SAMPLE_PROJECT_ID);
+  const open = async () => {
+    const target = `/du-an/${SAMPLE_PROJECT_ID}?tab=mat-bang`;
+    if (exists) {
+      navigate(target);
+      return;
+    }
+    setBusy(true);
+    try {
+      await saveProject(await createSampleProject());
+      toast('Đã tạo dự án mẫu (minh hoạ) — xoá được bất cứ lúc nào');
+      navigate(target);
+    } catch (e) {
+      toast(`Không tạo được dự án mẫu: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return { open, busy, exists };
+}
+
+function NoMapsCard({ project, editable, onCreate }: { project: Project; editable: boolean; onCreate: () => void }) {
+  const sample = useSampleProject();
+  const offerSample = editable && project.id !== SAMPLE_PROJECT_ID;
   return (
     <Card>
       <EmptyState
@@ -167,14 +197,23 @@ function NoMapsCard({ editable, onCreate }: { editable: boolean; onCreate: () =>
         title="Chưa có bản đồ mặt bằng"
         description={
           editable
-            ? 'Khoanh từng căn trên mặt bằng của CĐT — khách chạm vào căn là thấy ngay hình mẫu, giá, diện tích, còn hay đã bán.'
+            ? `Khoanh từng căn trên mặt bằng của CĐT — khách chạm vào căn là thấy ngay hình mẫu, giá, diện tích, còn hay đã bán.${
+                offerSample ? ' Muốn xem thử trước: mở dự án mẫu có sẵn mặt bằng, hình mẫu căn và bảng hàng.' : ''
+              }`
             : 'Dự án chưa có bản đồ mặt bằng tương tác.'
         }
         action={
           editable && (
-            <Button variant="primary" icon={Plus} onClick={onCreate}>
-              Thêm bản đồ
-            </Button>
+            <>
+              <Button variant="primary" icon={Plus} onClick={onCreate}>
+                Thêm bản đồ
+              </Button>
+              {offerSample && (
+                <Button icon={Sparkles} onClick={() => void sample.open()} loading={sample.busy}>
+                  {sample.exists ? 'Mở dự án mẫu' : 'Xem dự án mẫu'}
+                </Button>
+              )}
+            </>
           )
         }
       />
