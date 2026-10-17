@@ -192,9 +192,11 @@ tr.sf-flash > td {
 }
 
 @media print {
+  /* Lề trang = 0: trình duyệt không còn chỗ in đường link, tiêu đề, ngày giờ ở đầu / cuối trang.
+     Lề thật của phiếu do trang tự tạo (xem ClientSheet). */
   @page {
     size: A4;
-    margin: 12mm;
+    margin: 0;
   }
   body {
     @apply bg-white;

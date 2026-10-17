@@ -21,6 +21,7 @@ Bản đang chạy: https://trungdeveloper1993.github.io/bds/
   - **Dự án mẫu** để xem thử ngay (tab Mặt bằng → *Xem dự án mẫu*): mặt bằng 16 căn/tầng, hình mẫu 1PN+1 / 2PN / 3PN và bảng hàng 336 căn — toàn bộ là minh hoạ do ứng dụng tự tạo, xoá được bất cứ lúc nào.
 - **Thanh toán & ưu đãi**: phương thức thanh toán theo từng đợt (chuẩn theo tiến độ, thanh toán sớm, vay ngân hàng…) kèm chiết khấu riêng; ưu đãi giảm %, giảm tiền, quà tặng có điều kiện và hạn áp dụng (tự báo hết hạn, ưu đãi nội bộ ẩn khi khách xem); tiến độ dự án theo mốc (khởi công, cất nóc, bàn giao, cấp sổ).
   - **Tính giá & dòng tiền** cho một căn: chọn căn (giá lấy từ bảng hàng / giỏ hàng) → phương thức → ưu đãi → ra giá sau chiết khấu, phí bảo trì, số tiền từng đợt; copy gửi khách qua Zalo. Mở thẳng từ thẻ căn trên bản đồ ("Tính dòng tiền").
+  - **Gửi khách chi tiết một căn** dạng **PDF** (A4, in được) hoặc **ảnh PNG** (xem trên điện thoại): hình mẫu căn, giá, diện tích, hướng, giá sau ưu đãi, dòng tiền từng đợt, quà tặng, tiến độ dự án — bấm "Gửi khách (PDF / ảnh)" trên thẻ căn hoặc ở bảng tính giá rồi chia sẻ thẳng qua Zalo.
 - Tổng quan: chủ đầu tư & đối tác, vị trí (địa chỉ mới sau sáp nhập + địa chỉ cũ), quy mô, mật độ, bảng loại sản phẩm, giá, đơn giá, thanh toán, ngân hàng, tiêu chuẩn bàn giao, phí quản lý, liên kết vùng, tiện ích nội/ngoại khu, điểm nổi bật.
 - **Tài liệu** theo 12 nhóm của bộ tài liệu bán hàng (pháp lý, bảng giá & giỏ hàng, chính sách, thanh toán & vay, mặt bằng, bàn giao & vận hành, giới thiệu, hợp đồng & biểu mẫu, tiến độ, hình ảnh, đào tạo & Q&A…). Giữ nguyên file gốc (PDF, Word, Excel, ảnh…), tự đoán nhóm từ tên file, ngày áp dụng, đánh dấu **hết hiệu lực** khi có bảng giá mới, phân quyền **Gửi khách được / Nội bộ**, mở – tải về – chia sẻ Zalo.
 - **Checklist 12 hồ sơ pháp lý** theo Luật KDBĐS 2023, Luật Nhà ở 2023, Luật Đất đai 2024 (trạng thái, số/ngày văn bản, gắn file) và thẻ ghi nhớ quy định khi tư vấn.
@@ -39,7 +40,7 @@ Bản đang chạy: https://trungdeveloper1993.github.io/bds/
 **Tư vấn & chia sẻ**
 - **Tìm kiếm chung** (Ctrl + K): dự án, tài liệu, BĐS, khách — gõ không dấu cũng được.
 - **Chế độ khách xem**: một chạm ẩn toàn bộ thông tin nội bộ, có thể khoá bằng mã PIN.
-- **Phiếu tư vấn** mang thương hiệu cá nhân, in hoặc lưu PDF gửi khách.
+- **Phiếu tư vấn / thông tin dự án** mang thương hiệu cá nhân, gồm cả ưu đãi & chiết khấu, phương thức và các đợt thanh toán, tiến độ dự án. Tạo file **PDF / ảnh PNG** để gửi Zalo, hoặc in — bản in và file đều không có đường link web, ngày giờ ở đầu / cuối trang; chân trang PDF ghi tên, số điện thoại môi giới và số trang.
 
 **Dữ liệu**
 - Lưu ngay trên thiết bị (IndexedDB), dùng được khi mất mạng, cài lên màn hình chính như ứng dụng.

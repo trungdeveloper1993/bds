@@ -1,7 +1,8 @@
-import { ChevronLeft, Printer } from 'lucide-react';
+import { ChevronLeft, Printer, Share2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { ImageView } from '../components/media';
 import { resolveChecklist, UnitTypesTable } from '../components/project';
+import { SheetExportModal } from '../components/sheetshare';
 import { Button, Toggle } from '../components/ui';
 import {
   ACTIVE_PROPERTY_STATUSES,
@@ -10,6 +11,7 @@ import {
   FRONTAGE_LABEL,
   FURNISHING_LABEL,
   LEGAL_LABEL,
+  MILESTONE_STATUS,
   PROJECT_STAGE,
   PROPERTY_TYPE_LABEL,
   TRANSACTION_LABEL,
@@ -19,16 +21,19 @@ import {
 import { formatArea, formatDate, formatNumber, formatPhone, formatPrice, formatUnitPrice } from '../lib/format';
 import { formatAddress, formatPriceRange, formatProjectAddress } from '../lib/listing';
 import { mainArea } from '../lib/match';
+import { fmtPct, promotionActive, promotionValueText, untilText } from '../lib/pricing';
 import { goBack, useLocation } from '../lib/router';
+import { projectSheetBlocks, propertiesSheetBlocks, salutation } from '../lib/sheetContent';
 import { needsSummary } from '../lib/summary';
 import { useData } from '../store/data';
 import type { Project, Property } from '../types';
 
 export function ClientSheet() {
   const { query } = useLocation();
-  const { propertyById, projectById, customerById, settings } = useData();
+  const { propertyById, projectById, customerById, properties: allProperties, settings } = useData();
   const [hideNumber, setHideNumber] = useState(true);
   const [showDescription, setShowDescription] = useState(true);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const customer = customerById.get(query.get('kh') ?? '');
   const project = projectById.get(query.get('da') ?? '');
@@ -39,6 +44,12 @@ export function ClientSheet() {
 
   const title = project ? 'THÔNG TIN DỰ ÁN' : 'PHIẾU TƯ VẤN BẤT ĐỘNG SẢN';
   const nothing = !project && properties.length === 0;
+  const needs = customer ? needsSummary(customer, projectById) : '';
+
+  const build = () =>
+    project
+      ? projectSheetBlocks(project, { settings, units: allProperties, customer, needs, showDescription })
+      : propertiesSheetBlocks(properties, { settings, projectById, customer, needs, hideNumber, showDescription });
 
   return (
     <div className="min-h-dvh bg-slate-200/70 print:bg-white">
@@ -47,81 +58,107 @@ export function ClientSheet() {
           <Button variant="ghost" icon={ChevronLeft} onClick={() => goBack(project ? `/du-an/${project.id}` : '/bds')}>
             Quay lại
           </Button>
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             {!project && <Toggle checked={hideNumber} onChange={setHideNumber} label="Ẩn số nhà" />}
             <Toggle checked={showDescription} onChange={setShowDescription} label="Kèm mô tả" />
-            <Button variant="primary" icon={Printer} onClick={() => window.print()} disabled={nothing}>
-              In / Lưu PDF
+            <Button icon={Printer} onClick={() => window.print()} disabled={nothing}>
+              In
+            </Button>
+            <Button variant="primary" icon={Share2} onClick={() => setExportOpen(true)} disabled={nothing}>
+              Gửi khách (PDF / ảnh)
             </Button>
           </div>
         </div>
         <p className="mx-auto max-w-[210mm] px-4 pb-2 text-xs text-slate-500">
-          Mẹo: trên điện thoại chọn <b>In → Lưu thành PDF</b>, rồi gửi file PDF cho khách qua Zalo.
+          Mẹo: bấm <b>Gửi khách</b> để tạo file PDF hoặc ảnh PNG rồi gửi qua Zalo — file không kèm đường link web.
         </p>
       </div>
 
+      {exportOpen && (
+        <SheetExportModal
+          title={project ? `Gửi khách: ${project.name}` : 'Gửi khách: phiếu tư vấn'}
+          baseName={project ? `Thong-tin-du-an-${project.name}` : `Phieu-tu-van${customer ? `-${customer.name}` : ''}`}
+          build={build}
+          buildKey={JSON.stringify([project?.updatedAt, properties.map((p) => p.updatedAt), customer?.id, hideNumber, showDescription])}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
+
       <div className="mx-auto max-w-[210mm] px-2 py-4 sm:px-4 sm:py-6 print:max-w-none print:p-0">
-        <article className="bg-white px-5 py-6 shadow-xl sm:px-10 sm:py-9 print:px-0 print:py-0 print:shadow-none">
-          <header className="flex flex-wrap items-start justify-between gap-4 border-b-2 border-brand-700 pb-4">
-            <div className="flex items-center gap-3">
-              <img src="favicon.svg" alt="" className="size-11 rounded-xl" />
-              <div>
-                <div className="text-lg font-extrabold leading-tight text-slate-900">{settings.officeName || settings.agentName || 'Tư vấn bất động sản'}</div>
-                {settings.officeAddress && <div className="text-xs text-slate-500">{settings.officeAddress}</div>}
-              </div>
-            </div>
-            <div className="text-right text-sm">
-              {settings.agentName && <div className="font-bold text-slate-900">{settings.agentName}</div>}
-              {settings.agentTitle && <div className="text-xs text-slate-500">{settings.agentTitle}</div>}
-              {settings.agentPhone && <div className="font-semibold text-brand-800">☎ {formatPhone(settings.agentPhone)}</div>}
-              {settings.agentEmail && <div className="text-xs text-slate-600">{settings.agentEmail}</div>}
-            </div>
-          </header>
+        <article className="bg-white px-5 py-6 shadow-xl sm:px-10 sm:py-9 print:p-0 print:shadow-none">
+          {/* Khi in: lề trang = 0 để trình duyệt không in đường link / ngày giờ; khoảng trắng trên – dưới mỗi trang do thead / tfoot lặp lại. */}
+          <table className="w-full border-collapse">
+            <thead className="hidden print:table-header-group">
+              <tr>
+                <td className="h-[12mm]" />
+              </tr>
+            </thead>
+            <tfoot className="hidden print:table-footer-group">
+              <tr>
+                <td className="h-[12mm]" />
+              </tr>
+            </tfoot>
+            <tbody>
+              <tr>
+                <td className="p-0 align-top print:px-[14mm]">
+                  <header className="flex flex-wrap items-start justify-between gap-4 border-b-2 border-brand-700 pb-4">
+                    <div className="flex items-center gap-3">
+                      <img src="favicon.svg" alt="" className="size-11 rounded-xl" />
+                      <div>
+                        <div className="text-lg font-extrabold leading-tight text-slate-900">{settings.officeName || settings.agentName || 'Tư vấn bất động sản'}</div>
+                        {settings.officeAddress && <div className="text-xs text-slate-500">{settings.officeAddress}</div>}
+                      </div>
+                    </div>
+                    <div className="text-right text-sm">
+                      {settings.agentName && <div className="font-bold text-slate-900">{settings.agentName}</div>}
+                      {settings.agentTitle && <div className="text-xs text-slate-500">{settings.agentTitle}</div>}
+                      {settings.agentPhone && <div className="font-semibold text-brand-800">☎ {formatPhone(settings.agentPhone)}</div>}
+                      {settings.agentEmail && <div className="text-xs text-slate-600">{settings.agentEmail}</div>}
+                    </div>
+                  </header>
 
-          <div className="mt-5 text-center">
-            <h1 className="text-xl font-extrabold tracking-wide text-brand-900 sm:text-2xl">{title}</h1>
-            <p className="mt-1 text-sm text-slate-500">Ngày {formatDate(new Date().toISOString())}</p>
-          </div>
+                  <div className="mt-5 text-center">
+                    <h1 className="text-xl font-extrabold tracking-wide text-brand-900 sm:text-2xl">{title}</h1>
+                    <p className="mt-1 text-sm text-slate-500">Ngày {formatDate(new Date().toISOString())}</p>
+                  </div>
 
-          {customer && (
-            <div className="mt-5 rounded-xl bg-slate-50 px-4 py-3 text-sm print:border print:border-slate-200">
-              <div>
-                Kính gửi: <b className="text-slate-900">{salutation(customer.name)}</b>
-              </div>
-              <div className="mt-0.5 text-slate-600">Nhu cầu: {needsSummary(customer, projectById)}</div>
-            </div>
-          )}
+                  {customer && (
+                    <div className="mt-5 rounded-xl bg-slate-50 px-4 py-3 text-sm print:border print:border-slate-200">
+                      <div>
+                        Kính gửi: <b className="text-slate-900">{salutation(customer.name)}</b>
+                      </div>
+                      <div className="mt-0.5 text-slate-600">Nhu cầu: {needs}</div>
+                    </div>
+                  )}
 
-          {nothing && <p className="mt-10 text-center text-slate-500">Không có BĐS nào để hiển thị.</p>}
+                  {nothing && <p className="mt-10 text-center text-slate-500">Không có BĐS nào để hiển thị.</p>}
 
-          {project && <ProjectSheet project={project} showDescription={showDescription} />}
+                  {project && <ProjectSheet project={project} showDescription={showDescription} />}
 
-          {properties.map((p, i) => (
-            <PropertyBlock
-              key={p.id}
-              index={i + 1}
-              property={p}
-              project={projectById.get(p.projectId)}
-              hideNumber={hideNumber}
-              showDescription={showDescription}
-            />
-          ))}
+                  {properties.map((p, i) => (
+                    <PropertyBlock
+                      key={p.id}
+                      index={i + 1}
+                      property={p}
+                      project={projectById.get(p.projectId)}
+                      hideNumber={hideNumber}
+                      showDescription={showDescription}
+                    />
+                  ))}
 
-          <footer className="mt-8 border-t border-slate-200 pt-4 text-xs leading-relaxed text-slate-500">
-            Thông tin mang tính tham khảo tại thời điểm lập phiếu và có thể thay đổi theo chính sách của chủ đầu tư / chủ nhà. Vui lòng liên hệ{' '}
-            {settings.agentName ? <b className="text-slate-700">{settings.agentName}</b> : 'chuyên viên tư vấn'}
-            {settings.agentPhone ? ` (${formatPhone(settings.agentPhone)})` : ''} để được tư vấn chi tiết và đi xem thực tế.
-          </footer>
+                  <footer className="mt-8 border-t border-slate-200 pt-4 text-xs leading-relaxed text-slate-500">
+                    Thông tin mang tính tham khảo tại thời điểm lập phiếu và có thể thay đổi theo chính sách của chủ đầu tư / chủ nhà. Vui lòng liên hệ{' '}
+                    {settings.agentName ? <b className="text-slate-700">{settings.agentName}</b> : 'chuyên viên tư vấn'}
+                    {settings.agentPhone ? ` (${formatPhone(settings.agentPhone)})` : ''} để được tư vấn chi tiết và đi xem thực tế.
+                  </footer>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </article>
       </div>
     </div>
   );
-}
-
-/** "Chị Lan" giữ nguyên; "Nguyễn Văn A" → "Anh/Chị Nguyễn Văn A". */
-function salutation(name: string): string {
-  const trimmed = name.trim();
-  return /^(anh|chị|chi|cô|chú|bác|ông|bà|em|mr\.?|mrs\.?|ms\.?)\s/i.test(trimmed) ? trimmed : `Anh/Chị ${trimmed}`;
 }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -228,6 +265,8 @@ function ProjectSheet({ project: p, showDescription }: { project: Project; showD
     .split('\n')
     .map((l) => l.trim().replace(/^[-•*+]\s*/, ''))
     .filter(Boolean);
+  const promos = p.sales.promotions.filter((x) => !x.internal && promotionActive(x));
+  const milestones = p.sales.milestones.filter((m) => m.label.trim());
 
   return (
     <div className="mt-6">
@@ -297,11 +336,72 @@ function ProjectSheet({ project: p, showDescription }: { project: Project; showD
         </div>
       )}
 
+      {promos.length > 0 && (
+        <div className="mt-4 break-inside-avoid">
+          <h3 className="text-sm font-bold uppercase tracking-wide text-brand-800">Ưu đãi & chiết khấu</h3>
+          <ul className="mt-1.5 space-y-1 text-[13px] text-slate-700">
+            {promos.map((x) => (
+              <li key={x.id}>
+                <b className={x.kind === 'gift' ? 'text-violet-700' : 'text-emerald-700'}>{promotionValueText(x)}</b> · <b className="text-slate-900">{x.name}</b>
+                {x.condition && <span> — {x.condition}</span>}
+                {x.until && <span className="text-slate-500"> ({untilText(x.until)})</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {p.sales.methods.length > 0 && (
+        <div className="mt-4">
+          <h3 className="text-sm font-bold uppercase tracking-wide text-brand-800">Phương thức & tiến độ thanh toán</h3>
+          {p.sales.methods.map((m) => (
+            <div key={m.id} className="mt-2 break-inside-avoid">
+              <div className="flex flex-wrap items-baseline justify-between gap-2 text-[13px]">
+                <b className="text-slate-900">{m.name}</b>
+                {m.discountPct > 0 && <span className="font-semibold text-emerald-700">Chiết khấu {fmtPct(m.discountPct)}</span>}
+              </div>
+              {m.installments.length > 0 && (
+                <table className="mt-1 w-full text-[13px]">
+                  <tbody>
+                    {m.installments.map((r, i) => (
+                      <tr key={r.id} className="border-b border-slate-100 last:border-0">
+                        <td className="w-24 py-1 pr-2 text-slate-800">{r.label.trim() || `Đợt ${i + 1}`}</td>
+                        <td className="w-16 py-1 pr-3 text-right font-semibold text-brand-800">{fmtPct(r.pct)}</td>
+                        <td className="py-1 text-slate-600">
+                          {r.when}
+                          {r.date && ` · ${formatDate(r.date)}`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {m.note && <p className="mt-1 text-xs text-slate-500">{m.note}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
       {(p.paymentPlan || p.salesPolicy) && (
         <div className="mt-4 break-inside-avoid">
           <h3 className="text-sm font-bold uppercase tracking-wide text-brand-800">Thanh toán & chính sách</h3>
           {p.paymentPlan && <p className="mt-1.5 whitespace-pre-line text-[13px] text-slate-700">{p.paymentPlan}</p>}
           {p.salesPolicy && <p className="mt-1.5 whitespace-pre-line text-[13px] text-slate-700">{p.salesPolicy}</p>}
+        </div>
+      )}
+
+      {milestones.length > 0 && (
+        <div className="mt-4 break-inside-avoid">
+          <h3 className="text-sm font-bold uppercase tracking-wide text-brand-800">Tiến độ dự án</h3>
+          <ul className="mt-1.5 space-y-0.5 text-[13px] text-slate-700">
+            {milestones.map((m) => (
+              <li key={m.id}>
+                • <b className="text-slate-900">{m.label}</b>
+                {m.time && ` · ${m.time}`} — {MILESTONE_STATUS[m.status].label.toLowerCase()}
+                {m.note && <span className="text-slate-500">. {m.note}</span>}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
