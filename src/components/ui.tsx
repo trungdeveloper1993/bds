@@ -721,8 +721,13 @@ const AVATAR_COLORS = [
 export function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
   let hash = 0;
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  const letter = (words[words.length - 1] ?? '?').charAt(0).toUpperCase();
+  // "Chị Lan (Q7)" → "L": bỏ ghi chú trong ngoặc, lấy từ cuối có chữ cái.
+  const words = name
+    .replace(/\([^)]*\)|\[[^\]]*\]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter((w) => /\p{L}/u.test(w));
+  const letter = (words[words.length - 1] ?? name.trim()).charAt(0).toUpperCase() || '?';
   return (
     <span
       className={cn(

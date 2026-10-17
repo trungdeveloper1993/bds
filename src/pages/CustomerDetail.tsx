@@ -1,5 +1,6 @@
 import {
   Building2,
+  Cake,
   CalendarCheck,
   CalendarClock,
   Check,
@@ -15,6 +16,7 @@ import {
   Printer,
   Send,
   StickyNote,
+  Tag,
   Target,
   Trash2,
   UserRound,
@@ -22,6 +24,8 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { applyInteraction } from '../components/customer';
+import { TagInput } from '../components/inputs';
+import { CustomerMessageModal } from '../components/messaging';
 import { PropertyStatusBadge } from '../components/property';
 import { ImageView } from '../components/media';
 import {
@@ -48,6 +52,7 @@ import {
   CUSTOMER_SOURCE_LABEL,
   CUSTOMER_STATUS,
   CUSTOMER_STATUSES,
+  CUSTOMER_TAG_SUGGESTIONS,
   CUSTOMER_TRANSACTION_LABEL,
   DIRECTION_LABEL,
   INTERACTION_KIND_LABEL,
@@ -59,6 +64,7 @@ import {
   TEMPERATURE,
   TEMPERATURES,
 } from '../constants';
+import { uniqueTags } from '../lib/defaults';
 import {
   formatAreaRange,
   formatBudget,
@@ -68,6 +74,7 @@ import {
   formatPrice,
   relativeDay,
   telHref,
+  timeAgo,
   todayStr,
   toDateTimeInput,
   zaloHref,
@@ -75,18 +82,23 @@ import {
 import { uid } from '../lib/id';
 import { formatAddress } from '../lib/listing';
 import { MATCH_THRESHOLD, matchLevel, matchProperty, type MatchResult } from '../lib/match';
+import { birthdayWhen, daysToBirthday, formatBirthday, lastContactAt, tagCounts } from '../lib/messages';
 import { navigate } from '../lib/router';
+import { BIRTHDAY_TEMPLATE_ID } from '../lib/templates';
 import { useData } from '../store/data';
 import { useUI } from '../store/ui';
 import type { Customer, CustomerStatus, Interaction, InteractionKind, InterestStatus, Property, Temperature } from '../types';
 import { NotFound } from './NotFound';
 
 export function CustomerDetail({ id }: { id: string }) {
-  const { customerById, properties, propertyById, projectById, patchCustomer, deleteCustomer } = useData();
+  const { customers, customerById, properties, propertyById, projectById, patchCustomer, deleteCustomer } = useData();
   const { toast, confirm } = useUI();
   const customer = customerById.get(id);
   const [showAllMatches, setShowAllMatches] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  /** Hộp gửi tin đang mở (kèm mẫu chọn sẵn, VD lời chúc sinh nhật). */
+  const [message, setMessage] = useState<{ templateId?: string } | null>(null);
+  const tagSuggestions = useMemo(() => uniqueTags([...tagCounts(customers).map((x) => x.tag), ...CUSTOMER_TAG_SUGGESTIONS]), [customers]);
 
   const matches = useMemo(() => {
     if (!customer) return [];
@@ -138,6 +150,8 @@ export function CustomerDetail({ id }: { id: string }) {
     navigate('/khach', { replace: true });
   };
 
+  const birthdayIn = daysToBirthday(c.birthday);
+
   const needs: Array<[string, string | undefined]> = [
     ['Nhu cầu', CUSTOMER_TRANSACTION_LABEL[c.transaction]],
     ['Loại hình', c.propertyTypes.map((t) => PROPERTY_TYPE_LABEL[t]).join(', ') || undefined],
@@ -165,6 +179,13 @@ export function CustomerDetail({ id }: { id: string }) {
               {CUSTOMER_STATUS[c.status].label}
             </Badge>
             <Badge tone={TEMPERATURE[c.temperature].tone}>Khách {TEMPERATURE[c.temperature].label.toLowerCase()}</Badge>
+            {c.tags.map((tag) => (
+              <button key={tag} type="button" onClick={() => navigate(`/khach?nhan=${encodeURIComponent(tag)}`)} title={`Xem các khách có nhãn ${tag}`}>
+                <Badge tone="slate" icon={Tag}>
+                  {tag}
+                </Badge>
+              </button>
+            ))}
           </>
         }
         title={c.name}
@@ -173,14 +194,17 @@ export function CustomerDetail({ id }: { id: string }) {
           <>
             {c.phone && (
               <>
-                <ButtonLink href={telHref(c.phone)} icon={Phone}>
-                  Gọi
+                <ButtonLink href={telHref(c.phone)} icon={Phone} aria-label="Gọi" className="w-10 px-0 sm:w-auto sm:px-4">
+                  <span className="hidden sm:inline">Gọi</span>
                 </ButtonLink>
-                <ButtonLink href={zaloHref(c.phone)} target="_blank" rel="noopener noreferrer" icon={MessageCircle}>
-                  Zalo
+                <ButtonLink href={zaloHref(c.phone)} target="_blank" rel="noopener noreferrer" icon={MessageCircle} aria-label="Zalo" className="w-10 px-0 sm:w-auto sm:px-4">
+                  <span className="hidden sm:inline">Zalo</span>
                 </ButtonLink>
               </>
             )}
+            <Button icon={Send} onClick={() => setMessage({})}>
+              Gửi tin
+            </Button>
             <Button variant="primary" icon={Pencil} onClick={() => navigate(`/khach/${c.id}/sua`)}>
               Sửa
             </Button>
@@ -373,6 +397,18 @@ export function CustomerDetail({ id }: { id: string }) {
         </div>
 
         <div className="space-y-5">
+          {birthdayIn !== null && birthdayIn <= 3 && (
+            <div className="flex items-center gap-3 rounded-2xl bg-pink-50 px-4 py-3 ring-1 ring-inset ring-pink-200">
+              <Cake size={20} className="shrink-0 text-pink-600" />
+              <span className="min-w-0 flex-1 text-sm text-pink-950">
+                <b>{birthdayIn === 0 ? 'Hôm nay' : birthdayIn === 1 ? 'Ngày mai' : `Còn ${birthdayIn} ngày`}</b> là sinh nhật khách ({formatBirthday(c.birthday)})
+              </span>
+              <Button size="sm" variant="soft" className="bg-white text-pink-800 hover:bg-pink-100" onClick={() => setMessage({ templateId: BIRTHDAY_TEMPLATE_ID })}>
+                Gửi lời chúc
+              </Button>
+            </div>
+          )}
+
           <div className="hidden lg:block">
             <FollowUpCard customer={c} onSet={setFollowUp} />
           </div>
@@ -397,6 +433,15 @@ export function CustomerDetail({ id }: { id: string }) {
                   className="w-full"
                 />
               </Field>
+              <Field label="Nhãn / nhóm khách" htmlFor="customer-tags">
+                <TagInput
+                  id="customer-tags"
+                  value={c.tags}
+                  onChange={(tags) => void patch(() => ({ tags: uniqueTags(tags) }))}
+                  suggestions={tagSuggestions}
+                  placeholder="VD: VIP, Nhà đầu tư"
+                />
+              </Field>
             </div>
           </Card>
 
@@ -414,8 +459,16 @@ export function CustomerDetail({ id }: { id: string }) {
               </InfoRow>
               <InfoRow label="Nơi ở">{c.address}</InfoRow>
               <InfoRow label="Nghề nghiệp">{c.occupation}</InfoRow>
-              <InfoRow label="Năm sinh">{c.birthYear}</InfoRow>
+              {c.birthday ? (
+                <InfoRow label="Sinh nhật">
+                  {formatBirthday(c.birthday, c.birthYear)}
+                  {birthdayIn !== null && birthdayIn <= 30 && <span className="font-medium text-pink-700"> · {birthdayWhen(birthdayIn).toLowerCase()}</span>}
+                </InfoRow>
+              ) : (
+                <InfoRow label="Năm sinh">{c.birthYear}</InfoRow>
+              )}
               <InfoRow label="Nguồn khách">{CUSTOMER_SOURCE_LABEL[c.source]}</InfoRow>
+              <InfoRow label="Liên hệ gần nhất">{timeAgo(lastContactAt(c))}</InfoRow>
             </dl>
           </Card>
 
@@ -431,6 +484,7 @@ export function CustomerDetail({ id }: { id: string }) {
       </div>
 
       <ClientSheetPicker open={sheetOpen} onClose={() => setSheetOpen(false)} customer={c} />
+      <CustomerMessageModal customer={c} open={!!message} templateId={message?.templateId} onClose={() => setMessage(null)} />
     </>
   );
 }

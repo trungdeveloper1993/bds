@@ -37,6 +37,13 @@ Bản đang chạy: https://trungdeveloper1993.github.io/bds/
 - Nhu cầu chi tiết (loại hình, dự án, khu vực, ngân sách, diện tích, hướng, pháp lý…), mức độ nóng/ấm/lạnh, phễu chăm sóc.
 - **Tự ghép BĐS phù hợp** kèm điểm % và lý do khớp/lệch; theo dõi phản hồi của khách với từng căn.
 - Nhật ký chăm sóc (tự nâng trạng thái), lịch hẹn và nhắc việc trên trang Tổng quan.
+- **Gửi tin chăm sóc nhanh** cho một khách hoặc cả nhóm qua **Email** (ứng dụng mail trên máy hoặc Gmail), **Zalo** (tự copy tin rồi mở chat với khách) hoặc **SMS** — từ trang khách, lịch hẹn trên Tổng quan, hoặc *Chọn & gửi tin* trong danh sách khách. Ứng dụng không gửi thay: tin được mở sẵn trong ứng dụng mail / Zalo / tin nhắn của bạn để kiểm tra rồi bấm gửi.
+  - **Mẫu tin** có sẵn: chào khách mới, gửi thông tin dự án, mời đi xem nhà, thông báo ưu đãi, hỏi thăm sau khi xem, chúc mừng năm mới, chúc mừng sinh nhật. Tự điền `{xưng hô}` (*Chị Lan*, *Anh/Chị Minh*), `{nhu cầu}`, `{dự án}`, `{giá dự án}`, `{ưu đãi}` (chỉ ưu đãi còn hạn, không gồm ưu đãi nội bộ), `{chữ ký}`…; dòng nào thiếu dữ liệu tự bỏ. Sửa / thêm mẫu trong Cài đặt → *Mẫu tin chăm sóc khách*, hoặc *Lưu làm mẫu* ngay khi đang soạn (tên khách, dự án tự đổi thành ô tự điền).
+  - **Gửi nhóm**: một email chung BCC (khách không thấy địa chỉ của nhau, tối đa 40 người nhận / đợt, kèm nút copy danh sách email), hoặc *Gửi từng khách* — mỗi khách một tin riêng có tên và nhu cầu của mình, đánh dấu đã gửi từng người.
+  - Tự ghi vào nhật ký chăm sóc (kèm hẹn lại sau 3 ngày / 1 tuần…); SMS hiện số ký tự, số tin và nút bỏ dấu cho rẻ hơn.
+- **Nhãn / nhóm khách** (VIP, Nhà đầu tư, Khách Aurora…): lọc theo nhãn, dự án quan tâm; gắn / bỏ nhãn hàng loạt; tìm kiếm cả theo nhãn.
+- **Sinh nhật khách**: nhắc trên Tổng quan (hôm nay và 7 ngày tới, kèm tuổi), gửi lời chúc một chạm. Nhắc khách đang chăm sóc **lâu chưa liên hệ** (30 ngày trở lên).
+- Xuất **danh bạ .vcf** các khách đã chọn để nhập vào điện thoại (tìm khách trên Zalo, cuộc gọi đến hiện tên khách); Excel khách hàng có thêm nhãn, sinh nhật, lần liên hệ gần nhất.
 
 **Tư vấn & chia sẻ**
 - **Tìm kiếm chung** (Ctrl + K): dự án, tài liệu, BĐS, khách — gõ không dấu cũng được.

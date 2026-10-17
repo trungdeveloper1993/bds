@@ -65,6 +65,8 @@ interface DataContextValue extends DataState {
   patchProject(id: string, fn: (current: Project) => Partial<Project>): Promise<void>;
   patchProperty(id: string, fn: (current: Property) => Partial<Property>): Promise<void>;
   patchCustomer(id: string, fn: (current: Customer) => Partial<Customer>): Promise<void>;
+  /** Sửa nhiều khách một lần (gắn nhãn, ghi nhật ký gửi tin nhóm); fn trả về null = giữ nguyên. Trả về số khách đã sửa. */
+  patchCustomers(ids: string[], fn: (current: Customer) => Partial<Customer> | null): Promise<number>;
   updateSettings(patch: Partial<Settings>): Promise<void>;
 
   addImages(owner: MediaOwner, files: File[], onProgress?: (done: number, total: number) => void): Promise<UploadResult>;
@@ -404,6 +406,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [commit, exclusive],
   );
 
+  const patchCustomers = useCallback(
+    (ids: string[], fn: (current: Customer) => Partial<Customer> | null) =>
+      exclusive(async () => {
+        const wanted = new Set(ids);
+        const now = new Date().toISOString();
+        const changed: Customer[] = [];
+        for (const current of ref.current.customers) {
+          if (!wanted.has(current.id)) continue;
+          const patch = fn(current);
+          if (patch) changed.push({ ...current, ...patch, id: current.id, updatedAt: now });
+        }
+        await db.putMany('customers', changed);
+        const byId = new Map(changed.map((c) => [c.id, c]));
+        commit((st) => ({ ...st, customers: [...changed, ...st.customers.filter((c) => !byId.has(c.id))] }));
+        return changed.length;
+      }),
+    [commit, exclusive],
+  );
+
   const updateSettings = useCallback(
     (patch: Partial<Settings>) =>
       exclusive(async () => {
@@ -580,6 +601,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
             const theirs = content.settings[key];
             if (typeof merged[key] === 'string' && !merged[key] && typeof theirs === 'string' && theirs) fill[key] = theirs;
           }
+          // Mẫu tin tự soạn trong file sao lưu được thêm vào (mẫu cùng id trên máy này giữ nguyên).
+          const ownTemplates = new Set(merged.messageTemplates.map((t) => t.id));
+          merged.messageTemplates = [...merged.messageTemplates, ...content.settings.messageTemplates.filter((t) => !ownTemplates.has(t.id))];
           await db.put('meta', merged, 'settings');
           summary = {
             projects: projects.length,
@@ -626,6 +650,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     patchProject,
     patchProperty,
     patchCustomer,
+    patchCustomers,
     updateSettings,
     addImages,
     setImages,

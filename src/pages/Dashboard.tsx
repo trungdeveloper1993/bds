@@ -1,7 +1,9 @@
 import {
   BellRing,
   Building2,
+  Cake,
   CalendarClock,
+  Clock,
   CircleCheck,
   FileClock,
   Files,
@@ -11,16 +13,18 @@ import {
   House,
   Phone,
   Plus,
+  Send,
   TriangleAlert,
   UserPlus,
   UserRound,
   Users,
   Wallet,
 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { BarList, StatTile } from '../components/charts';
 import { DocActions, FileTypeIcon } from '../components/documents';
 import { ImageView } from '../components/media';
+import { CustomerMessageModal } from '../components/messaging';
 import { ProjectStageBadge } from '../components/project';
 import { PropertyRow } from '../components/property';
 import { Avatar, Badge, Button, Card, CardHeader, cn } from '../components/ui';
@@ -34,7 +38,9 @@ import {
 } from '../constants';
 import { daysFromToday, formatDate, formatMoney, relativeDay, telHref, timeAgo } from '../lib/format';
 import { formatPriceRange } from '../lib/listing';
+import { birthdayWhen, daysSinceContact, formatBirthday, STALE_DAYS, upcomingBirthdays } from '../lib/messages';
 import { navigate } from '../lib/router';
+import { BIRTHDAY_TEMPLATE_ID } from '../lib/templates';
 import { useData } from '../store/data';
 import type { Customer, PropertyType } from '../types';
 
@@ -44,7 +50,9 @@ function todayLabel(): string {
 }
 
 export function Dashboard() {
-  const { projects, properties, customers, settings, projectById } = useData();
+  const { projects, properties, customers, settings, projectById, customerById } = useData();
+  /** Hộp gửi tin đang mở cho khách nào (kèm mẫu chọn sẵn). */
+  const [message, setMessage] = useState<{ customerId: string; templateId?: string } | null>(null);
 
   const stats = useMemo(() => {
     const active = properties.filter((p) => ACTIVE_PROPERTY_STATUSES.includes(p.status));
@@ -81,6 +89,9 @@ export function Dashboard() {
       .sort((a, b) => a.diff - b.diff);
     return items;
   }, [customers]);
+
+  const birthdays = useMemo(() => upcomingBirthdays(customers, 7), [customers]);
+  const staleCount = useMemo(() => customers.filter((c) => ACTIVE_CUSTOMER_STATUSES.includes(c.status) && daysSinceContact(c) >= STALE_DAYS).length, [customers]);
 
   const recentDocs = useMemo(
     () =>
@@ -201,9 +212,21 @@ export function Dashboard() {
             ) : (
               <ul className="divide-y divide-slate-100">
                 {agenda.slice(0, 8).map(({ customer: c, diff }) => (
-                  <AgendaRow key={c.id} customer={c} diff={diff} />
+                  <AgendaRow key={c.id} customer={c} diff={diff} onMessage={() => setMessage({ customerId: c.id })} />
                 ))}
               </ul>
+            )}
+            {staleCount > 0 && (
+              <button
+                type="button"
+                onClick={() => navigate('/khach?lau-chua-lien-he=1')}
+                className="flex w-full items-center gap-2.5 border-t border-slate-100 px-4 py-3 text-left text-[13px] text-slate-600 transition hover:bg-slate-50 sm:px-5"
+              >
+                <Clock size={16} className="shrink-0 text-amber-600" />
+                <span>
+                  <b className="text-slate-900">{staleCount} khách</b> đang chăm sóc đã hơn {STALE_DAYS} ngày chưa liên hệ — xem để hỏi thăm
+                </span>
+              </button>
             )}
           </Card>
 
@@ -260,6 +283,31 @@ export function Dashboard() {
         </div>
 
         <div className="space-y-5">
+          {birthdays.length > 0 && (
+            <Card className="border-pink-200">
+              <CardHeader title="Sinh nhật khách" icon={Cake} description="Hôm nay và 7 ngày tới" className="bg-pink-50/50" />
+              <ul className="divide-y divide-slate-100">
+                {birthdays.map(({ customer: c, days, age }) => (
+                  <li key={c.id} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
+                    <button type="button" onClick={() => navigate(`/khach/${c.id}`)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                      <Avatar name={c.name} size="sm" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-bold text-slate-900">{c.name}</span>
+                        <span className={cn('block text-xs', days === 0 ? 'font-semibold text-pink-700' : 'text-slate-500')}>
+                          {birthdayWhen(days)} · {formatBirthday(c.birthday)}
+                          {age ? <span className="whitespace-nowrap"> · {age} tuổi</span> : null}
+                        </span>
+                      </span>
+                    </button>
+                    <Button size="sm" variant={days === 0 ? 'primary' : 'secondary'} icon={Send} onClick={() => setMessage({ customerId: c.id, templateId: BIRTHDAY_TEMPLATE_ID })}>
+                      Chúc mừng
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
           {(expiring.length > 0 || deposited.length > 0) && (
             <Card className="border-amber-200">
               <CardHeader title="Cần chú ý" icon={TriangleAlert} className="bg-amber-50/60" />
@@ -341,11 +389,18 @@ export function Dashboard() {
           )}
         </div>
       </div>
+
+      <CustomerMessageModal
+        customer={message ? customerById.get(message.customerId) : null}
+        open={!!message}
+        templateId={message?.templateId}
+        onClose={() => setMessage(null)}
+      />
     </>
   );
 }
 
-function AgendaRow({ customer: c, diff }: { customer: Customer; diff: number }) {
+function AgendaRow({ customer: c, diff, onMessage }: { customer: Customer; diff: number; onMessage: () => void }) {
   return (
     <li className="flex items-center gap-3 px-4 py-3 sm:px-5">
       <button type="button" onClick={() => navigate(`/khach/${c.id}`)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
@@ -361,6 +416,15 @@ function AgendaRow({ customer: c, diff }: { customer: Customer; diff: number }) 
       <Badge tone={diff < 0 ? 'rose' : diff === 0 ? 'amber' : 'slate'} size="sm">
         {relativeDay(c.nextFollowUp)}
       </Badge>
+      <button
+        type="button"
+        onClick={onMessage}
+        aria-label={`Gửi tin cho ${c.name}`}
+        title="Gửi email / Zalo / SMS"
+        className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100"
+      >
+        <Send size={16} />
+      </button>
       {c.phone && (
         <a href={telHref(c.phone)} aria-label={`Gọi ${c.name}`} className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700 hover:bg-brand-100">
           <Phone size={16} />

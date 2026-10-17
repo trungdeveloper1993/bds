@@ -34,6 +34,7 @@ import type {
   LegalItem,
   MapCardFields,
   MapUnit,
+  MessageTemplate,
   Milestone,
   MilestoneStatus,
   PaymentMethod,
@@ -49,6 +50,7 @@ import type {
   UnitTypeRow,
 } from '../types';
 import { uid } from './id';
+import { defaultMessageTemplates } from './templates';
 
 export function emptySeller(): SellerInfo {
   return {
@@ -175,9 +177,11 @@ export function emptyCustomer(defaults: Partial<Customer> = {}): Customer {
     email: '',
     address: '',
     occupation: '',
+    birthday: '',
     source: 'facebook',
     status: 'moi',
     temperature: 'am',
+    tags: [],
     transaction: 'ban',
     propertyTypes: [],
     projectIds: [],
@@ -211,6 +215,7 @@ export function defaultSettings(): Settings {
     mapColors: { ...DEFAULT_MAP_COLORS },
     mapCard: { ...DEFAULT_MAP_CARD },
     mapHidePrice: false,
+    messageTemplates: defaultMessageTemplates(),
   };
 }
 
@@ -634,6 +639,40 @@ function normalizeInteraction(raw: unknown): Interaction | null {
   };
 }
 
+const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+/** Ngày sinh nhật hợp lệ dạng MM-DD, ngược lại ''. */
+function birthdayOf(v: unknown): string {
+  const m = typeof v === 'string' ? /^(\d{2})-(\d{2})$/.exec(v) : null;
+  if (!m) return '';
+  const month = +m[1];
+  const day = +m[2];
+  return month >= 1 && month <= 12 && day >= 1 && day <= DAYS_IN_MONTH[month - 1] ? m[0] : '';
+}
+
+/** Bỏ khoảng trắng thừa và nhãn trùng (không phân biệt hoa thường). */
+export function uniqueTags(tags: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of tags) {
+    const tag = raw.replace(/\s+/g, ' ').trim();
+    const key = tag.toLocaleLowerCase('vi');
+    if (!tag || seen.has(key)) continue;
+    seen.add(key);
+    out.push(tag);
+  }
+  return out;
+}
+
+function normalizeTemplate(raw: unknown): MessageTemplate | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Loose<MessageTemplate>;
+  const name = str(r.name).trim();
+  const body = str(r.body);
+  if (!name && !body.trim()) return null;
+  return { id: idOf(r.id), name: name || 'Mẫu tin', subject: str(r.subject), body };
+}
+
 export function normalizeCustomer(raw: unknown): Customer | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Loose<Customer>;
@@ -649,9 +688,11 @@ export function normalizeCustomer(raw: unknown): Customer | null {
     address: str(r.address),
     occupation: str(r.occupation),
     birthYear: num(r.birthYear),
+    birthday: birthdayOf(r.birthday),
     source: oneOf(CUSTOMER_SOURCE_LABEL, r.source, 'khac'),
     status: oneOf(CUSTOMER_STATUS, r.status, 'moi'),
     temperature: oneOf(TEMPERATURE, r.temperature, 'am'),
+    tags: uniqueTags(strings(r.tags)),
     transaction: oneOf(TRANSACTION_LABEL, r.transaction, 'ban'),
     propertyTypes: listOf(PROPERTY_TYPE_LABEL, r.propertyTypes),
     projectIds: strings(r.projectIds),
@@ -708,5 +749,9 @@ export function normalizeSettings(raw: unknown): Settings {
       }),
     ) as unknown as MapCardFields,
     mapHidePrice: r.mapHidePrice === true,
+    // Bản cài đặt cũ chưa có mẫu tin → dùng mẫu có sẵn; danh sách rỗng là do người dùng xoá hết.
+    messageTemplates: Array.isArray(r.messageTemplates)
+      ? listOfObjects(r.messageTemplates, normalizeTemplate).filter((t, i, list) => list.findIndex((x) => x.id === t.id) === i)
+      : base.messageTemplates,
   };
 }

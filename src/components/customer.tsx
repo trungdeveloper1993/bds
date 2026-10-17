@@ -1,6 +1,7 @@
-import { CalendarClock, MessageCircle, Phone } from 'lucide-react';
-import { CUSTOMER_PIPELINE, CUSTOMER_STATUS, TEMPERATURE } from '../constants';
+import { CalendarClock, MessageCircle, Phone, Tag } from 'lucide-react';
+import { ACTIVE_CUSTOMER_STATUSES, CUSTOMER_PIPELINE, CUSTOMER_STATUS, TEMPERATURE } from '../constants';
 import { daysFromToday, formatPhone, relativeDay, telHref, zaloHref } from '../lib/format';
+import { daysSinceContact, STALE_DAYS } from '../lib/messages';
 import { navigate } from '../lib/router';
 import { needsSummary } from '../lib/summary';
 import type { Customer, CustomerStatus, Interaction, Interest, InterestStatus, Project } from '../types';
@@ -25,14 +26,35 @@ export function CustomerRow({
   customer: c,
   projectById,
   matchCount,
+  selecting,
+  selected,
+  onToggle,
 }: {
   customer: Customer;
   projectById: Map<string, Project>;
   matchCount?: number;
+  /** Chế độ chọn nhiều khách: chạm vào dòng để chọn thay vì mở khách. */
+  selecting?: boolean;
+  selected?: boolean;
+  onToggle?: () => void;
 }) {
+  const quiet = ACTIVE_CUSTOMER_STATUSES.includes(c.status) ? daysSinceContact(c) : 0;
   return (
-    <div className="flex items-start gap-3 px-4 py-3.5 transition hover:bg-slate-50/80 sm:px-5">
-      <button type="button" onClick={() => navigate(`/khach/${c.id}`)} className="flex min-w-0 flex-1 items-start gap-3 text-left">
+    <div className={cn('flex items-start gap-3 px-4 py-3.5 transition hover:bg-slate-50/80 sm:px-5', selected && 'bg-brand-50/70 hover:bg-brand-50')}>
+      {selecting && (
+        <input
+          type="checkbox"
+          checked={!!selected}
+          onChange={() => onToggle?.()}
+          aria-label={`Chọn ${c.name}`}
+          className="mt-2.5 size-[18px] shrink-0 cursor-pointer rounded-md accent-brand-700"
+        />
+      )}
+      <button
+        type="button"
+        onClick={() => (selecting ? onToggle?.() : navigate(`/khach/${c.id}`))}
+        className="flex min-w-0 flex-1 items-start gap-3 text-left"
+      >
         <Avatar name={c.name} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -54,10 +76,22 @@ export function CustomerRow({
                 {matchCount} BĐS phù hợp
               </span>
             )}
+            {quiet >= STALE_DAYS && (
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">
+                {quiet} ngày chưa liên hệ
+              </span>
+            )}
+            {c.tags.slice(0, 3).map((tag) => (
+              <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                <Tag size={10} strokeWidth={2.6} />
+                {tag}
+              </span>
+            ))}
+            {c.tags.length > 3 && <span className="text-[11px] font-semibold text-slate-400">+{c.tags.length - 3}</span>}
           </div>
         </div>
       </button>
-      {c.phone && (
+      {c.phone && !selecting && (
         <div className="flex shrink-0 gap-1">
           <a href={telHref(c.phone)} aria-label={`Gọi ${c.name}`} className="flex size-9 items-center justify-center rounded-xl bg-brand-50 text-brand-700 transition hover:bg-brand-100">
             <Phone size={16} />
@@ -100,7 +134,13 @@ export function applyInteraction(c: Customer, interaction: Interaction): { statu
   let interests = c.interests;
   if (interaction.propertyId) {
     const target: InterestStatus | null =
-      interaction.kind === 'dan_xem' ? 'da_xem' : interaction.kind === 'gui_thong_tin' || interaction.kind === 'nhan_tin' ? 'da_gui' : interaction.kind === 'dam_phan' || interaction.kind === 'dat_coc' ? 'quan_tam' : null;
+      interaction.kind === 'dan_xem'
+        ? 'da_xem'
+        : interaction.kind === 'gui_thong_tin' || interaction.kind === 'nhan_tin' || interaction.kind === 'gui_email'
+          ? 'da_gui'
+          : interaction.kind === 'dam_phan' || interaction.kind === 'dat_coc'
+            ? 'quan_tam'
+            : null;
     const existing = interests.find((i) => i.propertyId === interaction.propertyId);
     const now = new Date().toISOString();
     if (!existing) {

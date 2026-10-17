@@ -471,6 +471,7 @@ export type InterestStatus = 'de_xuat' | 'da_gui' | 'da_xem' | 'quan_tam' | 'kho
 export type InteractionKind =
   | 'goi_dien'
   | 'nhan_tin'
+  | 'gui_email'
   | 'gap_mat'
   | 'dan_xem'
   | 'gui_thong_tin'
@@ -507,9 +508,13 @@ export interface Customer {
   address: string;
   occupation: string;
   birthYear?: number;
+  /** Ngày sinh nhật dạng MM-DD ('' nếu chưa biết) — năm sinh lưu riêng ở birthYear. */
+  birthday: string;
   source: CustomerSource;
   status: CustomerStatus;
   temperature: Temperature;
+  /** Nhãn / nhóm khách tự đặt: "VIP", "Nhà đầu tư", "Khách Aurora"… — để lọc và gửi tin cả nhóm. */
+  tags: string[];
 
   // Nhu cầu
   transaction: Transaction;
@@ -560,6 +565,17 @@ export interface Settings {
   mapCard: MapCardFields;
   /** Ẩn giá trên bản đồ (hiện "Liên hệ"). */
   mapHidePrice: boolean;
+  /** Mẫu tin nhắn / email chăm sóc khách. */
+  messageTemplates: MessageTemplate[];
+}
+
+/** Mẫu tin gửi khách; {xưng hô}, {dự án}… được điền theo từng khách khi gửi. */
+export interface MessageTemplate {
+  id: string;
+  name: string;
+  /** Tiêu đề khi gửi email. */
+  subject: string;
+  body: string;
 }
 
 export interface MapCardFields {
