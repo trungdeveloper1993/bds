@@ -1,12 +1,12 @@
-import type { LayoutAssignment, Project, ProjectMap, UnitLayout, UnitTypeRow } from '../types';
+import type { LayoutAssignment, MapUnit, Project, ProjectMap, UnitLayout, UnitTypeRow } from '../types';
 import { uid } from './id';
 import { matchUnitType } from './inventory';
-import { indexByCode, normCode, positionOf, projectCodes, squashCode } from './maps';
+import { floorList, indexByCode, normCode, positionOf, projectCodes, squashCode, unitCode } from './maps';
 import { bedroomsIn, foldText } from './smartfind';
 
 /*
- * Thư viện hình mẫu căn: mỗi hình mẫu một mã (VD "3PN-GOC"), gắn cho từng căn theo mã căn
- * hoặc cho một ô trên mặt bằng (mặt bằng tầng điển hình: áp dụng mọi tầng).
+ * Thư viện hình mẫu căn: mỗi hình mẫu một mã (VD "3PN-GOC"), gắn cho một ô trên mặt bằng
+ * (mặt bằng tầng điển hình: mọi căn cùng vị trí ở các tầng dùng chung) hoặc riêng một căn (ngoại lệ).
  */
 
 // ---------------------------------------------------------------- Mã & thẻ từ tên file
@@ -169,6 +169,37 @@ export function setAssignments(list: LayoutAssignment[], changes: Array<{ code: 
 export function withPositionLayout(maps: ProjectMap[], mapId: string, unitIds: string[], layoutId?: string): ProjectMap[] {
   const ids = new Set(unitIds);
   return maps.map((m) => (m.id === mapId ? { ...m, units: m.units.map((u) => (ids.has(u.id) ? { ...u, layoutId } : u)) } : m));
+}
+
+/** Mọi mã căn của một ô (mặt bằng tầng điển hình: căn cùng vị trí ở từng tầng). */
+export function positionCodes(map: ProjectMap, unit: MapUnit): string[] {
+  const label = unit.label.trim();
+  if (!label) return [];
+  const floors = floorList(map);
+  return floors.length ? floors.map((f) => unitCode(map, label, f)) : [unitCode(map, label)];
+}
+
+/**
+ * Đổi hình mẫu của các ô — mọi căn cùng vị trí ở các tầng dùng chung hình mẫu mới,
+ * kể cả căn đang gắn hình mẫu riêng (trừ các mã trong keep).
+ */
+export function applyToPosition(
+  p: Pick<Project, 'maps' | 'layoutAssignments'>,
+  mapId: string,
+  unitIds: string[],
+  layoutId: string | undefined,
+  keep: string[] = [],
+): Pick<Project, 'maps' | 'layoutAssignments'> {
+  const map = p.maps.find((m) => m.id === mapId);
+  const kept = new Set(keep.map(squashCode));
+  const codes = map ? map.units.filter((u) => unitIds.includes(u.id)).flatMap((u) => positionCodes(map, u)) : [];
+  return {
+    maps: withPositionLayout(p.maps, mapId, unitIds, layoutId),
+    layoutAssignments: setAssignments(
+      p.layoutAssignments,
+      codes.filter((c) => !kept.has(squashCode(c))).map((code) => ({ code })),
+    ),
+  };
 }
 
 /** Xoá hình mẫu khỏi thư viện và bỏ mọi chỗ đang gắn. */
